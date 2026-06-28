@@ -1,5 +1,6 @@
 package com.medibook.api.service;
 
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
@@ -16,13 +17,27 @@ public class MedicalCheckApiService {
     @Value("${medical.check.api.url:https://mock-pid-api.onrender.com}")
     private String apiBaseUrl;
 
-    @Value("${medical.check.api.key:}")
+    @Value("${medical.check.api.key}")
     private String apiKey;
 
     private final RestTemplate restTemplate;
 
     public MedicalCheckApiService() {
         this.restTemplate = new RestTemplate();
+    }
+
+    /**
+     * Fail-fast validation: the external medical-check API key must be configured
+     * (provided via the gitignored secrets file / environment). It must never
+     * silently fall back to an empty or committed default.
+     */
+    @PostConstruct
+    void validateConfiguration() {
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalStateException(
+                "medical.check.api.key must be configured. Set the MEDICAL_CHECK_API_KEY environment variable "
+                    + "(see application-secrets.properties.example).");
+        }
     }
 
     /**

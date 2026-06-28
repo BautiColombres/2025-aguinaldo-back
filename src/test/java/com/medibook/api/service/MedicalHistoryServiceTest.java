@@ -6,6 +6,7 @@ import com.medibook.api.entity.TurnAssigned;
 import com.medibook.api.entity.User;
 import com.medibook.api.repository.MedicalHistoryRepository;
 import com.medibook.api.repository.TurnAssignedRepository;
+import com.medibook.api.security.MedicalHistoryAuthorization;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,6 +36,9 @@ class MedicalHistoryServiceTest {
 
     @Mock
     private BadgeEvaluationTriggerService badgeEvaluationTrigger;
+
+    @Mock
+    private MedicalHistoryAuthorization medicalHistoryAuthorization;
 
     @InjectMocks
     private MedicalHistoryService medicalHistoryService;
@@ -227,6 +231,124 @@ class MedicalHistoryServiceTest {
         assertEquals("Test medical history content", dto.getContent());
 
         verify(medicalHistoryRepository).findByPatient_IdOrderByCreatedAtDesc(patientId);
+    }
+
+    @Test
+    void getPatientMedicalHistoryAuthorized_RelatedDoctor_Success() {
+        org.springframework.security.core.Authentication auth =
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                        doctor, null, java.util.List.of());
+        when(medicalHistoryAuthorization.canRead(auth, patientId)).thenReturn(true);
+        when(medicalHistoryRepository.findByPatient_IdOrderByCreatedAtDesc(patientId))
+                .thenReturn(Arrays.asList(medicalHistory));
+
+        List<MedicalHistoryDTO> result =
+                medicalHistoryService.getPatientMedicalHistoryAuthorized(auth, patientId);
+
+        assertEquals(1, result.size());
+        verify(medicalHistoryAuthorization).canRead(auth, patientId);
+        verify(medicalHistoryRepository).findByPatient_IdOrderByCreatedAtDesc(patientId);
+    }
+
+    @Test
+    void getPatientMedicalHistoryAuthorized_UnrelatedDoctor_Throws() {
+        org.springframework.security.core.Authentication auth =
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                        doctor, null, java.util.List.of());
+        when(medicalHistoryAuthorization.canRead(auth, patientId)).thenReturn(false);
+
+        assertThrows(org.springframework.security.access.AccessDeniedException.class,
+                () -> medicalHistoryService.getPatientMedicalHistoryAuthorized(auth, patientId));
+
+        verify(medicalHistoryAuthorization).canRead(auth, patientId);
+        verify(medicalHistoryRepository, never()).findByPatient_IdOrderByCreatedAtDesc(any());
+    }
+
+    @Test
+    void getMedicalHistoryById_RelatedDoctor_ReturnsEntry() {
+        org.springframework.security.core.Authentication auth =
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                        doctor, null, java.util.List.of());
+        when(medicalHistoryRepository.findById(historyId)).thenReturn(Optional.of(medicalHistory));
+        when(medicalHistoryAuthorization.canRead(auth, patientId)).thenReturn(true);
+
+        MedicalHistoryDTO result = medicalHistoryService.getMedicalHistoryById(auth, historyId);
+
+        assertNotNull(result);
+        assertEquals(historyId, result.getId());
+        assertEquals(patientId, result.getPatientId());
+        verify(medicalHistoryRepository).findById(historyId);
+        verify(medicalHistoryAuthorization).canRead(auth, patientId);
+    }
+
+    @Test
+    void getMedicalHistoryById_UnrelatedDoctor_Throws() {
+        org.springframework.security.core.Authentication auth =
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                        doctor, null, java.util.List.of());
+        when(medicalHistoryRepository.findById(historyId)).thenReturn(Optional.of(medicalHistory));
+        when(medicalHistoryAuthorization.canRead(auth, patientId)).thenReturn(false);
+
+        assertThrows(org.springframework.security.access.AccessDeniedException.class,
+                () -> medicalHistoryService.getMedicalHistoryById(auth, historyId));
+
+        verify(medicalHistoryRepository).findById(historyId);
+        verify(medicalHistoryAuthorization).canRead(auth, patientId);
+    }
+
+    @Test
+    void getMedicalHistoryById_PatientReadingOwn_ReturnsEntry() {
+        org.springframework.security.core.Authentication auth =
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                        patient, null, java.util.List.of());
+        when(medicalHistoryRepository.findById(historyId)).thenReturn(Optional.of(medicalHistory));
+        when(medicalHistoryAuthorization.canRead(auth, patientId)).thenReturn(true);
+
+        MedicalHistoryDTO result = medicalHistoryService.getMedicalHistoryById(auth, historyId);
+
+        assertNotNull(result);
+        assertEquals(historyId, result.getId());
+        verify(medicalHistoryRepository).findById(historyId);
+        verify(medicalHistoryAuthorization).canRead(auth, patientId);
+    }
+
+    @Test
+    void getMedicalHistoryById_PatientReadingOthers_Throws() {
+        User otherPatient = new User();
+        otherPatient.setId(UUID.randomUUID());
+        otherPatient.setRole("PATIENT");
+        otherPatient.setStatus("ACTIVE");
+        org.springframework.security.core.Authentication auth =
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                        otherPatient, null, java.util.List.of());
+        when(medicalHistoryRepository.findById(historyId)).thenReturn(Optional.of(medicalHistory));
+        when(medicalHistoryAuthorization.canRead(auth, patientId)).thenReturn(false);
+
+        assertThrows(org.springframework.security.access.AccessDeniedException.class,
+                () -> medicalHistoryService.getMedicalHistoryById(auth, historyId));
+
+        verify(medicalHistoryRepository).findById(historyId);
+        verify(medicalHistoryAuthorization).canRead(auth, patientId);
+    }
+
+    @Test
+    void getMedicalHistoryById_Admin_ReturnsEntry() {
+        User admin = new User();
+        admin.setId(UUID.randomUUID());
+        admin.setRole("ADMIN");
+        admin.setStatus("ACTIVE");
+        org.springframework.security.core.Authentication auth =
+                new org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                        admin, null, java.util.List.of());
+        when(medicalHistoryRepository.findById(historyId)).thenReturn(Optional.of(medicalHistory));
+        when(medicalHistoryAuthorization.canRead(auth, patientId)).thenReturn(true);
+
+        MedicalHistoryDTO result = medicalHistoryService.getMedicalHistoryById(auth, historyId);
+
+        assertNotNull(result);
+        assertEquals(historyId, result.getId());
+        verify(medicalHistoryRepository).findById(historyId);
+        verify(medicalHistoryAuthorization).canRead(auth, patientId);
     }
 
     @Test

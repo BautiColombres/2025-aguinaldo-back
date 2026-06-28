@@ -5,21 +5,53 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.util.Date;
 import java.util.function.Function;
 
 @Service
 public class JwtService {
-    
+
+    /** Minimum signing-key length in bytes (256-bit) required for HMAC-SHA256. */
+    private static final int MIN_SECRET_BYTES = 32;
+
     @Value("${jwt.secret}")
     private String secretKey;
 
     @Value("${jwt.expiration}")
     private long jwtExpiration;
+
+    /**
+     * Fail-fast validation of the JWT configuration at bean initialization.
+     * The secret must be present and provide at least 32 bytes (256 bits) of key
+     * material, so HMAC-SHA256 tokens cannot be forged with a weak/empty key.
+     * The expiration must be a positive duration (milliseconds) so generated
+     * tokens have a valid, non-immediate expiry.
+     */
+    @PostConstruct
+    void validateSecretKey() {
+        if (secretKey == null || secretKey.isBlank()) {
+            throw new IllegalStateException(
+                "jwt.secret must be configured. Set the JWT_SECRET environment variable to a value of at least "
+                    + MIN_SECRET_BYTES + " bytes.");
+        }
+        int keyBytes = secretKey.getBytes(StandardCharsets.UTF_8).length;
+        if (keyBytes < MIN_SECRET_BYTES) {
+            throw new IllegalStateException(
+                "jwt.secret is too short: " + keyBytes + " bytes. It must be at least "
+                    + MIN_SECRET_BYTES + " bytes (256 bits) for HMAC-SHA256.");
+        }
+        if (jwtExpiration <= 0) {
+            throw new IllegalStateException(
+                "jwt.expiration must be a positive number of milliseconds. Set the JWT_DURATION "
+                    + "environment variable (current value: " + jwtExpiration + ").");
+        }
+    }
 
     public String generateToken(User user) {
         return Jwts.builder()
@@ -53,7 +85,7 @@ public class JwtService {
     }
 
     private Key getSignInKey(){
-        return Keys.hmacShaKeyFor(secretKey.getBytes());
+        return Keys.hmacShaKeyFor(secretKey.getBytes(StandardCharsets.UTF_8));
     }
 
     private <T> T extractClaim(String token, Function<Claims, T> claimsResolver) {

@@ -31,10 +31,17 @@ build/
 
 ### VS Code ###
 .vscode/
-src/main/resources/application.properties
 
 ### Environment Variables ###
 .env
 .env.local
 .env.production
 .env.development
+
+### Secrets (externalized, never committed) ###
+src/main/resources/application-secrets.properties
+application-secrets.properties
+
+### Claude Code ###
+.claude/
+CLAUDE.md

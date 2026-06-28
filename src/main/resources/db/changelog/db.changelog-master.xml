@@ -16,5 +16,6 @@
     <include file="0008-medical-history-turn.xml" relativeToChangelogFile="true"/>
     <include file="0009-ratings.xml" relativeToChangelogFile="true"/>
     <include file="0010-badges.xml" relativeToChangelogFile="true"/>
+    <include file="0011-admin-bootstrap-hardening.xml" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>

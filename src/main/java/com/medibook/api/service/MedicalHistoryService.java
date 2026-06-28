@@ -6,8 +6,11 @@ import com.medibook.api.entity.TurnAssigned;
 import com.medibook.api.entity.User;
 import com.medibook.api.repository.MedicalHistoryRepository;
 import com.medibook.api.repository.TurnAssignedRepository;
+import com.medibook.api.security.MedicalHistoryAuthorization;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,6 +30,7 @@ public class MedicalHistoryService {
     private final MedicalHistoryRepository medicalHistoryRepository;
     private final TurnAssignedRepository turnAssignedRepository;
     private final BadgeEvaluationTriggerService badgeEvaluationTrigger;
+    private final MedicalHistoryAuthorization medicalHistoryAuthorization;
     private static final ZoneId ARGENTINA_ZONE = ZoneId.of("America/Argentina/Buenos_Aires");
 
     @Transactional
@@ -96,6 +100,32 @@ public class MedicalHistoryService {
                 .stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Authorization-enforced read of a patient's medical history (defense in depth,
+     * mirrors the controller {@code @PreAuthorize("@medAuthz.canRead(...)")} check).
+     */
+    public List<MedicalHistoryDTO> getPatientMedicalHistoryAuthorized(Authentication authentication, UUID patientId) {
+        if (!medicalHistoryAuthorization.canRead(authentication, patientId)) {
+            throw new AccessDeniedException("Not authorized to read this patient's medical history");
+        }
+        return getPatientMedicalHistory(patientId);
+    }
+
+    /**
+     * Authorization-enforced lookup of a single medical history entry by id.
+     * Loads the entry first so the patient relationship can be evaluated, then
+     * applies the same {@code @medAuthz} read rules.
+     */
+    public MedicalHistoryDTO getMedicalHistoryById(Authentication authentication, UUID historyId) {
+        MedicalHistory medicalHistory = medicalHistoryRepository.findById(historyId)
+                .orElseThrow(() -> new RuntimeException("Medical history entry not found"));
+
+        if (!medicalHistoryAuthorization.canRead(authentication, medicalHistory.getPatient().getId())) {
+            throw new AccessDeniedException("Not authorized to read this medical history entry");
+        }
+        return mapToDTO(medicalHistory);
     }
 
     public List<MedicalHistoryDTO> getDoctorMedicalHistoryEntries(UUID doctorId) {

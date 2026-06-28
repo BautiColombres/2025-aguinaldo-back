@@ -125,7 +125,8 @@ public class DoctorController {
     }
 
     @GetMapping("/{doctorId}/patients/{patientId}/medical-history")
-    @PreAuthorize("hasRole('DOCTOR') and authentication.principal.id.equals(#doctorId)")
+    @PreAuthorize("(hasRole('DOCTOR') and authentication.principal.id.equals(#doctorId) "
+            + "and @medAuthz.canRead(authentication, #patientId)) or hasRole('ADMIN')")
     public ResponseEntity<List<MedicalHistoryDTO>> getPatientMedicalHistoryByDoctor(
             @PathVariable UUID doctorId,
             @PathVariable UUID patientId) {

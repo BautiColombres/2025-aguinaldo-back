@@ -3,6 +3,7 @@ package com.medibook.api.config;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -47,8 +48,14 @@ public class SecurityConfig {
                 return config;
             }))
             .authorizeHttpRequests(authz -> authz
-                // Rutas públicas
-                .requestMatchers("/api/auth/**").permitAll()
+                // Rutas públicas de autenticación (registro admin queda fuera a propósito)
+                .requestMatchers(HttpMethod.POST, "/api/auth/signin").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/auth/refresh-token").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/auth/signout").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/auth/verify").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/auth/register/patient").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/auth/register/doctor").permitAll()
+                // register/admin requiere autenticación + @PreAuthorize("hasRole('ADMIN')")
                 .requestMatchers("/api/gymcloud/**").permitAll()
                 .requestMatchers("/error").permitAll()
                 // Rutas privadas

@@ -1,5 +1,7 @@
 package com.medibook.api.service;
 
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.medibook.api.entity.TurnAssigned;
 import com.medibook.api.entity.TurnFile;
 import com.medibook.api.repository.TurnAssignedRepository;
@@ -78,7 +80,12 @@ public class TurnFileServiceImpl implements TurnFileService {
                         log.error("Error creating notification for file upload: {}", e.getMessage());
                     }
                     
-                    return "{\"url\":\"" + publicUrl + "\", \"fileName\":\"" + customFileName + "\"}";
+                    // BSEC-H-2: build JSON via Jackson so quotes in values are escaped
+                    // (a raw quote in publicUrl/fileName previously produced malformed JSON).
+                    ObjectNode json = JsonNodeFactory.instance.objectNode();
+                    json.put("url", publicUrl);
+                    json.put("fileName", customFileName);
+                    return json.toString();
                 })
                 .doOnError(error -> log.error("Error uploading turn file for turnId {}: {}", turnId, error.getMessage()));
     }

@@ -22,8 +22,8 @@ public class MedicalCheckApiService {
 
     private final RestTemplate restTemplate;
 
-    public MedicalCheckApiService() {
-        this.restTemplate = new RestTemplate();
+    public MedicalCheckApiService(RestTemplate restTemplate) {
+        this.restTemplate = restTemplate;
     }
 
     /**
@@ -70,9 +70,11 @@ public class MedicalCheckApiService {
                 if (existsValue instanceof Boolean) {
                     return Boolean.TRUE.equals(existsValue);
                 }
-                return true;
+                // Fail-closed: absent or malformed "isUser" is treated as "not a user".
+                log.warn("Malformed medical-check response for email {}: missing/invalid 'isUser' field", email);
+                return false;
             }
-            
+
             return false;
         } catch (Exception e) {
             log.error("Error checking if user exists for email: {}", email, e);

@@ -13,7 +13,10 @@ import com.medibook.api.util.DateTimeUtils;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
@@ -39,6 +42,16 @@ public class TurnAssignedService {
     private final BadgeEvaluationTriggerService badgeEvaluationTrigger;
     private final MedicalCheckApiService medicalCheckApiService;
     private static final ZoneId ARGENTINA_ZONE = ZoneId.of("America/Argentina/Buenos_Aires");
+
+    /**
+     * Self-reference through the Spring transactional proxy, so
+     * {@link #completeTurnPersist} runs within its own transaction even though it is
+     * invoked from {@link #completeTurn} (self-invocation would otherwise bypass the
+     * proxy). Injected lazily to avoid a constructor cycle.
+     */
+    @Autowired
+    @Lazy
+    private TurnAssignedService self;
 
     public TurnResponseDTO createTurn(TurnCreateRequestDTO dto) {
         User doctor = userRepo.findById(dto.getDoctorId())
@@ -331,7 +344,47 @@ public class TurnAssignedService {
         return mapper.toDTO(saved);
     }
 
+    /**
+     * Result of the transactional part of completing a turn.
+     *
+     * @param dto                    the response for the completed turn
+     * @param healthCertificateEmail the patient email that requires an external
+     *                               medical-check registration, or {@code null} if none
+     */
+    public record CompletionResult(TurnResponseDTO dto, String healthCertificateEmail) {
+    }
+
+    /**
+     * Completes a turn. The DB mutation happens inside a transaction
+     * ({@link #completeTurnPersist}); the external medical-check API call is issued
+     * AFTERWARDS, outside the transactional boundary, so a slow/failing network call
+     * never holds a DB connection/transaction open.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public TurnResponseDTO completeTurn(UUID turnId, UUID doctorId) {
+        CompletionResult result = self.completeTurnPersist(turnId, doctorId);
+
+        String email = result.healthCertificateEmail();
+        if (email != null) {
+            try {
+                log.info("Processing health certificate completion for patient: {}", email);
+                medicalCheckApiService.processMedicalCheckCompletion(email);
+            } catch (Exception e) {
+                log.error("Error processing medical check API call for turn: {}", turnId, e);
+                // Don't fail the turn completion if external API fails
+            }
+        }
+
+        return result.dto();
+    }
+
+    /**
+     * Transactional DB work for completing a turn. Does NOT perform any external
+     * network call; it only reports (via {@link CompletionResult}) whether a
+     * health-certificate medical-check registration is required.
+     */
+    @Transactional
+    public CompletionResult completeTurnPersist(UUID turnId, UUID doctorId) {
         TurnAssigned turn = turnRepo.findById(turnId)
                 .orElseThrow(() -> new RuntimeException("Turn not found"));
 
@@ -346,21 +399,14 @@ public class TurnAssignedService {
         turn.setStatus("COMPLETED");
         TurnAssigned saved = turnRepo.save(turn);
 
-        // Check if this is a health certificate turn and process external API call
+        String healthCertificateEmail = null;
         if ("HEALTH CERTIFICATE".equalsIgnoreCase(turn.getMotive()) && turn.getPatient() != null) {
-            try {
-                String patientEmail = turn.getPatient().getEmail();
-                log.info("Processing health certificate completion for patient: {}", patientEmail);
-                medicalCheckApiService.processMedicalCheckCompletion(patientEmail);
-            } catch (Exception e) {
-                log.error("Error processing medical check API call for turn: {}", turnId, e);
-                // Don't fail the turn completion if external API fails
-            }
+            healthCertificateEmail = turn.getPatient().getEmail();
         }
 
         if (turn.getDoctor() != null && turn.getPatient() != null) {
             badgeEvaluationTrigger.evaluateAfterTurnCompletion(
-                turn.getDoctor().getId(), 
+                turn.getDoctor().getId(),
                 turn.getPatient().getId()
             );
             badgeEvaluationTrigger.evaluateAfterTurnCompletion(
@@ -369,7 +415,7 @@ public class TurnAssignedService {
             );
         }
 
-        return mapper.toDTO(saved);
+        return new CompletionResult(mapper.toDTO(saved), healthCertificateEmail);
     }
 
     public TurnResponseDTO markTurnAsNoShow(UUID turnId, UUID doctorId) {

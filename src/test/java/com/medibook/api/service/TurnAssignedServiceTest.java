@@ -59,6 +59,9 @@ class TurnAssignedServiceTest {
     @Mock
     private com.medibook.api.service.BadgeEvaluationTriggerService badgeEvaluationTrigger;
 
+    @Mock
+    private com.medibook.api.service.MedicalCheckApiService medicalCheckApiService;
+
     @InjectMocks
     private TurnAssignedService turnAssignedService;
 
@@ -142,6 +145,14 @@ class TurnAssignedServiceTest {
                 .scheduledAt(scheduledAt)
                 .status("SCHEDULED")
                 .build();
+
+        // In production the @Lazy self-reference is a transactional proxy; in unit
+        // tests we point it at the real instance so the DB portion runs for real
+        // (with mocked repos) while the external call stays outside that method.
+        org.springframework.test.util.ReflectionTestUtils.setField(turnAssignedService, "self", turnAssignedService);
+
+        patient.setEmail("patient@example.com");
+        doctor.setEmail("doctor@example.com");
     }
 
     @Test
@@ -1012,6 +1023,107 @@ class TurnAssignedServiceTest {
 
         assertTrue(exception.getMessage().contains("Turn cannot be completed"));
         verify(turnRepo, never()).save(any());
+    }
+
+    @Test
+    void completeTurn_HealthCertificate_CallsMedicalCheckAfterPersisting() {
+        TurnAssigned scheduledTurn = TurnAssigned.builder()
+                .id(turnId)
+                .doctor(doctor)
+                .patient(patient)
+                .scheduledAt(OffsetDateTime.now().plusDays(1))
+                .status("SCHEDULED")
+                .motive("HEALTH CERTIFICATE")
+                .build();
+
+        TurnAssigned completedTurn = TurnAssigned.builder()
+                .id(turnId)
+                .doctor(doctor)
+                .patient(patient)
+                .scheduledAt(scheduledTurn.getScheduledAt())
+                .status("COMPLETED")
+                .motive("HEALTH CERTIFICATE")
+                .build();
+
+        TurnResponseDTO response = TurnResponseDTO.builder()
+                .id(turnId)
+                .status("COMPLETED")
+                .build();
+
+        when(turnRepo.findById(turnId)).thenReturn(Optional.of(scheduledTurn));
+        when(turnRepo.save(any(TurnAssigned.class))).thenReturn(completedTurn);
+        when(mapper.toDTO(completedTurn)).thenReturn(response);
+
+        TurnResponseDTO result = turnAssignedService.completeTurn(turnId, doctorId);
+
+        assertNotNull(result);
+        // The external call must happen AFTER the DB persistence (turn saved),
+        // never before, so the transaction is not held open across the network call.
+        org.mockito.InOrder inOrder = org.mockito.Mockito.inOrder(turnRepo, medicalCheckApiService);
+        inOrder.verify(turnRepo).save(scheduledTurn);
+        inOrder.verify(medicalCheckApiService).processMedicalCheckCompletion("patient@example.com");
+    }
+
+    @Test
+    void completeTurn_NonHealthCertificate_DoesNotCallMedicalCheck() {
+        TurnAssigned scheduledTurn = TurnAssigned.builder()
+                .id(turnId)
+                .doctor(doctor)
+                .patient(patient)
+                .scheduledAt(OffsetDateTime.now().plusDays(1))
+                .status("SCHEDULED")
+                .motive("General consultation")
+                .build();
+
+        TurnAssigned completedTurn = TurnAssigned.builder()
+                .id(turnId)
+                .doctor(doctor)
+                .patient(patient)
+                .scheduledAt(scheduledTurn.getScheduledAt())
+                .status("COMPLETED")
+                .motive("General consultation")
+                .build();
+
+        when(turnRepo.findById(turnId)).thenReturn(Optional.of(scheduledTurn));
+        when(turnRepo.save(any(TurnAssigned.class))).thenReturn(completedTurn);
+        when(mapper.toDTO(completedTurn)).thenReturn(TurnResponseDTO.builder().id(turnId).status("COMPLETED").build());
+
+        turnAssignedService.completeTurn(turnId, doctorId);
+
+        verify(medicalCheckApiService, never()).processMedicalCheckCompletion(any());
+    }
+
+    @Test
+    void completeTurnPersist_HealthCertificate_DoesNotCallMedicalCheckInsideTransaction() {
+        // The transactional DB method must NOT trigger the external medical-check call;
+        // that call belongs to the non-transactional orchestrator (completeTurn).
+        TurnAssigned scheduledTurn = TurnAssigned.builder()
+                .id(turnId)
+                .doctor(doctor)
+                .patient(patient)
+                .scheduledAt(OffsetDateTime.now().plusDays(1))
+                .status("SCHEDULED")
+                .motive("HEALTH CERTIFICATE")
+                .build();
+
+        TurnAssigned completedTurn = TurnAssigned.builder()
+                .id(turnId)
+                .doctor(doctor)
+                .patient(patient)
+                .scheduledAt(scheduledTurn.getScheduledAt())
+                .status("COMPLETED")
+                .motive("HEALTH CERTIFICATE")
+                .build();
+
+        when(turnRepo.findById(turnId)).thenReturn(Optional.of(scheduledTurn));
+        when(turnRepo.save(any(TurnAssigned.class))).thenReturn(completedTurn);
+        when(mapper.toDTO(completedTurn)).thenReturn(TurnResponseDTO.builder().id(turnId).status("COMPLETED").build());
+
+        TurnAssignedService.CompletionResult persisted =
+                turnAssignedService.completeTurnPersist(turnId, doctorId);
+
+        assertEquals("patient@example.com", persisted.healthCertificateEmail());
+        verify(medicalCheckApiService, never()).processMedicalCheckCompletion(any());
     }
 
     @Test

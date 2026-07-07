@@ -3,8 +3,11 @@ package com.medibook.api.service;
 import com.medibook.api.entity.TurnAssigned;
 import com.medibook.api.entity.TurnFile;
 import com.medibook.api.entity.User;
+import com.medibook.api.model.AuditAction;
+import com.medibook.api.model.AuditOutcome;
 import com.medibook.api.repository.TurnAssignedRepository;
 import com.medibook.api.repository.TurnFileRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,6 +45,9 @@ class TurnFileServiceImplTest {
     private BadgeEvaluationTriggerService badgeEvaluationTrigger;
 
     @Mock
+    private AuditLogService auditLogService;
+
+    @Mock
     private MultipartFile file;
 
     @InjectMocks
@@ -77,6 +83,11 @@ class TurnFileServiceImplTest {
                 .build();
     }
 
+    @AfterEach
+    void clearSecurityContext() {
+        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+    }
+
     @Test
     void uploadTurnFile_Success() {
         String fileName = "test-file.pdf";
@@ -99,6 +110,8 @@ class TurnFileServiceImplTest {
         verify(turnFileRepository).save(any(TurnFile.class));
         verify(notificationService).createPatientFileUploadedNotification(
                 eq(doctor.getId()), any(UUID.class), anyString(), anyString(), anyString(), eq(fileName));
+        verify(auditLogService).record(any(), eq(AuditAction.CREATE), eq(AuditOutcome.ALLOW),
+                eq(patient.getId()), eq("TURN_FILE"), eq(turnId.toString()));
     }
 
     @Test
@@ -429,5 +442,7 @@ class TurnFileServiceImplTest {
         verify(turnFileRepository).findByTurnId(turnId);
         verify(supabaseStorageService).deleteFile("archivosTurnos", "test-file.pdf");
         verify(turnFileRepository).deleteByTurnId(turnId);
+        verify(auditLogService).record(any(), eq(AuditAction.DELETE), eq(AuditOutcome.ALLOW),
+                eq(patient.getId()), eq("TURN_FILE"), eq(turnId.toString()));
     }
 }

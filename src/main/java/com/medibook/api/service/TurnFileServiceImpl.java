@@ -4,11 +4,16 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.medibook.api.entity.TurnAssigned;
 import com.medibook.api.entity.TurnFile;
+import com.medibook.api.entity.User;
+import com.medibook.api.model.AuditAction;
+import com.medibook.api.model.AuditOutcome;
 import com.medibook.api.repository.TurnAssignedRepository;
 import com.medibook.api.repository.TurnFileRepository;
 import com.medibook.api.util.DateTimeUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import reactor.core.publisher.Mono;
@@ -26,13 +31,19 @@ public class TurnFileServiceImpl implements TurnFileService {
     private final TurnAssignedRepository turnAssignedRepository;
     private final NotificationService notificationService;
     private final BadgeEvaluationTriggerService badgeEvaluationTrigger;
-    
+    private final AuditLogService auditLogService;
+
     private static final String BUCKET_NAME = "archivosTurnos";
+    private static final String RESOURCE_TYPE = "TURN_FILE";
 
     @Override
     public Mono<String> uploadTurnFile(UUID turnId, MultipartFile file) {
         log.info("Starting upload process for turnId: {}", turnId);
-        
+
+        // Capture the actor on the request thread before the reactive chain runs
+        // (the security context may not be propagated onto reactive scheduler threads).
+        final User actor = currentActor();
+
         if (turnFileRepository.existsByTurnId(turnId)) {
             return Mono.error(new IllegalStateException("Ya existe un archivo para este turno. Elimínalo antes de subir uno nuevo."));
         }
@@ -51,7 +62,15 @@ public class TurnFileServiceImpl implements TurnFileService {
                     
                     turnFileRepository.save(turnFile);
                     log.info("File upload completed successfully for turnId: {}", turnId);
-                    
+
+                    Optional<TurnAssigned> auditTurnOpt = turnAssignedRepository.findById(turnId);
+                    UUID subjectPatientId = auditTurnOpt
+                            .map(TurnAssigned::getPatient)
+                            .map(User::getId)
+                            .orElse(null);
+                    auditLogService.record(actor, AuditAction.CREATE, AuditOutcome.ALLOW,
+                            subjectPatientId, RESOURCE_TYPE, turnId.toString());
+
                     try {
                         Optional<TurnAssigned> turnOpt = turnAssignedRepository.findById(turnId);
                         if (turnOpt.isPresent()) {
@@ -93,37 +112,50 @@ public class TurnFileServiceImpl implements TurnFileService {
     @Override
     public Mono<Void> deleteTurnFile(UUID turnId) {
         log.info("Starting delete process for turnId: {}", turnId);
-        
+
+        // Capture the actor on the request thread before the reactive chain runs.
+        final User actor = currentActor();
+
         return Mono.fromCallable(() -> {
             Optional<TurnAssigned> turnOpt = turnAssignedRepository.findById(turnId);
+            UUID subjectPatientId = null;
             if (turnOpt.isPresent()) {
                 TurnAssigned turn = turnOpt.get();
                 if ("COMPLETED".equals(turn.getStatus())) {
                     throw new IllegalStateException("No se puede eliminar el archivo de un turno completado");
                 }
+                if (turn.getPatient() != null) {
+                    subjectPatientId = turn.getPatient().getId();
+                }
             }
-            
-            return turnFileRepository.findByTurnId(turnId);
+
+            return new DeleteContext(subjectPatientId, turnFileRepository.findByTurnId(turnId));
         })
-                .flatMap(optionalTurnFile -> {
-                    if (optionalTurnFile.isEmpty()) {
+                .flatMap(ctx -> {
+                    if (ctx.file().isEmpty()) {
                         log.warn("No file found in database for turnId: {}", turnId);
                         return Mono.error(new IllegalArgumentException("Archivo no encontrado"));
                     }
-                    
-                    TurnFile turnFile = optionalTurnFile.get();
+
+                    TurnFile turnFile = ctx.file().get();
                     String fileName = turnFile.getFileName();
                     log.info("Found file in database: {} for turnId: {}", fileName, turnId);
-                    
+
                     return supabaseStorageService.deleteFile(BUCKET_NAME, fileName)
                             .then(Mono.fromRunnable(() -> {
                                 log.info("File {} deleted successfully from Supabase, now deleting from database", fileName);
                                 turnFileRepository.deleteByTurnId(turnId);
                                 log.info("Database record deleted successfully for turnId: {}", turnId);
+                                auditLogService.record(actor, AuditAction.DELETE, AuditOutcome.ALLOW,
+                                        ctx.subjectPatientId(), RESOURCE_TYPE, turnId.toString());
                             }));
                 })
                 .then()
                 .doOnError(error -> log.error("Error deleting turn file for turnId {}: {}", turnId, error.getMessage()));
+    }
+
+    /** Carries the resolved subject patient id alongside the file lookup through the delete chain. */
+    private record DeleteContext(UUID subjectPatientId, Optional<TurnFile> file) {
     }
 
     @Override
@@ -134,6 +166,18 @@ public class TurnFileServiceImpl implements TurnFileService {
     @Override
     public boolean fileExistsForTurn(UUID turnId) {
         return turnFileRepository.existsByTurnId(turnId);
+    }
+
+    private User currentActor() {
+        try {
+            Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+            if (authentication != null && authentication.getPrincipal() instanceof User user) {
+                return user;
+            }
+        } catch (Exception e) {
+            log.debug("Could not resolve audit actor from security context: {}", e.getMessage());
+        }
+        return null;
     }
 
     private String sanitizeFileName(String originalFileName) {

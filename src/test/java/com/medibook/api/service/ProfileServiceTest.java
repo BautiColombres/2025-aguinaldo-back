@@ -18,6 +18,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -155,21 +156,89 @@ class ProfileServiceTest {
     }
 
     @Test
-    void updateProfile_WithDifferentEmail_ShouldThrowIllegalArgumentException() {
-        // Given
-        ProfileUpdateRequestDTO updateRequest = createUpdateRequest("different@example.com", "Updated Name", "Updated Surname");
-        
+    void updateProfile_WithNewUnusedEmail_ShouldUpdateSuccessfully() {
+        // Given: email actually changed to one that no other user has
+        ProfileUpdateRequestDTO updateRequest = createUpdateRequest("new@example.com", "Updated Name", "Updated Surname");
+
+        User updatedUser = new User();
+        updatedUser.setId(userId);
+        updatedUser.setEmail("new@example.com");
+        updatedUser.setName("Updated Name");
+
+        ProfileResponseDTO updatedResponse = new ProfileResponseDTO();
+        updatedResponse.setId(userId);
+        updatedResponse.setEmail("new@example.com");
+        updatedResponse.setName("Updated Name");
+        updatedResponse.setRole("PATIENT");
+        updatedResponse.setStatus("ACTIVE");
+
         when(userRepository.findById(userId)).thenReturn(Optional.of(testUser));
+        when(userRepository.existsByEmail("new@example.com")).thenReturn(false);
+        when(userRepository.save(any(User.class))).thenReturn(updatedUser);
+        doNothing().when(profileMapper).updateUserFromRequest(testUser, updateRequest);
+        when(profileMapper.toProfileResponse(updatedUser)).thenReturn(updatedResponse);
+
+        // When
+        ProfileResponseDTO result = profileService.updateProfile(userId, updateRequest);
+
+        // Then
+        assertNotNull(result);
+        assertEquals(updatedResponse, result);
+        verify(userRepository).existsByEmail("new@example.com");
+        verify(profileMapper).updateUserFromRequest(testUser, updateRequest);
+        verify(userRepository).save(testUser);
+    }
+
+    @Test
+    void updateProfile_WithEmailUsedByAnotherUser_ShouldThrowIllegalArgumentException() {
+        // Given: email actually changed to one already taken by another user
+        ProfileUpdateRequestDTO updateRequest = createUpdateRequest("taken@example.com", "Updated Name", "Updated Surname");
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(testUser));
+        when(userRepository.existsByEmail("taken@example.com")).thenReturn(true);
 
         // When & Then
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> 
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () ->
             profileService.updateProfile(userId, updateRequest)
         );
-        
+
         assertEquals("Email already in use", exception.getMessage());
         verify(userRepository).findById(userId);
+        verify(userRepository).existsByEmail("taken@example.com");
         verifyNoInteractions(profileMapper);
         verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void updateProfile_WithSameEmail_ShouldNotCheckUniquenessAndSucceed() {
+        // Given: email unchanged -> must NOT be falsely rejected and must NOT query uniqueness
+        ProfileUpdateRequestDTO updateRequest = createUpdateRequest("test@example.com", "Updated Name", "Updated Surname");
+
+        User updatedUser = new User();
+        updatedUser.setId(userId);
+        updatedUser.setEmail("test@example.com");
+        updatedUser.setName("Updated Name");
+
+        ProfileResponseDTO updatedResponse = new ProfileResponseDTO();
+        updatedResponse.setId(userId);
+        updatedResponse.setEmail("test@example.com");
+        updatedResponse.setName("Updated Name");
+        updatedResponse.setRole("PATIENT");
+        updatedResponse.setStatus("ACTIVE");
+
+        when(userRepository.findById(userId)).thenReturn(Optional.of(testUser));
+        when(userRepository.save(any(User.class))).thenReturn(updatedUser);
+        doNothing().when(profileMapper).updateUserFromRequest(testUser, updateRequest);
+        when(profileMapper.toProfileResponse(updatedUser)).thenReturn(updatedResponse);
+
+        // When
+        ProfileResponseDTO result = profileService.updateProfile(userId, updateRequest);
+
+        // Then
+        assertNotNull(result);
+        assertEquals(updatedResponse, result);
+        verify(userRepository, never()).existsByEmail(anyString());
+        verify(userRepository).save(testUser);
     }
 
     @Test

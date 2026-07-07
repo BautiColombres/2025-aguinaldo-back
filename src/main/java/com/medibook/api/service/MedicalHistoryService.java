@@ -4,6 +4,8 @@ import com.medibook.api.dto.MedicalHistoryDTO;
 import com.medibook.api.entity.MedicalHistory;
 import com.medibook.api.entity.TurnAssigned;
 import com.medibook.api.entity.User;
+import com.medibook.api.model.AuditAction;
+import com.medibook.api.model.AuditOutcome;
 import com.medibook.api.repository.MedicalHistoryRepository;
 import com.medibook.api.repository.TurnAssignedRepository;
 import com.medibook.api.security.MedicalHistoryAuthorization;
@@ -31,7 +33,9 @@ public class MedicalHistoryService {
     private final TurnAssignedRepository turnAssignedRepository;
     private final BadgeEvaluationTriggerService badgeEvaluationTrigger;
     private final MedicalHistoryAuthorization medicalHistoryAuthorization;
+    private final AuditLogService auditLogService;
     private static final ZoneId ARGENTINA_ZONE = ZoneId.of("America/Argentina/Buenos_Aires");
+    private static final String RESOURCE_TYPE = "MEDICAL_HISTORY";
 
     @Transactional
     public MedicalHistoryDTO addMedicalHistory(UUID doctorId, UUID turnId, String content) {
@@ -70,6 +74,10 @@ public class MedicalHistoryService {
         MedicalHistory savedHistory = medicalHistoryRepository.save(medicalHistory);
         log.info("Added medical history entry for turn {} (patient {} by doctor {})", turnId, patient.getId(), doctorId);
 
+        auditLogService.record(AuditAction.CREATE, AuditOutcome.ALLOW,
+                patient.getId(), RESOURCE_TYPE,
+                savedHistory.getId() != null ? savedHistory.getId().toString() : null);
+
         badgeEvaluationTrigger.evaluateAfterMedicalHistoryDocumented(doctorId, content);
 
         return mapToDTO(savedHistory);
@@ -89,7 +97,10 @@ public class MedicalHistoryService {
 
         MedicalHistory updatedHistory = medicalHistoryRepository.save(medicalHistory);
         log.info("Updated medical history entry {} by doctor {}", historyId, doctorId);
-        
+
+        auditLogService.record(AuditAction.UPDATE, AuditOutcome.ALLOW,
+                updatedHistory.getPatient().getId(), RESOURCE_TYPE, historyId.toString());
+
         badgeEvaluationTrigger.evaluateAfterMedicalHistoryDocumented(doctorId, content);
         
         return mapToDTO(updatedHistory);
@@ -108,8 +119,10 @@ public class MedicalHistoryService {
      */
     public List<MedicalHistoryDTO> getPatientMedicalHistoryAuthorized(Authentication authentication, UUID patientId) {
         if (!medicalHistoryAuthorization.canRead(authentication, patientId)) {
+            auditLogService.record(AuditAction.READ, AuditOutcome.DENY, patientId, RESOURCE_TYPE, null);
             throw new AccessDeniedException("Not authorized to read this patient's medical history");
         }
+        auditLogService.record(AuditAction.READ, AuditOutcome.ALLOW, patientId, RESOURCE_TYPE, null);
         return getPatientMedicalHistory(patientId);
     }
 
@@ -122,9 +135,14 @@ public class MedicalHistoryService {
         MedicalHistory medicalHistory = medicalHistoryRepository.findById(historyId)
                 .orElseThrow(() -> new RuntimeException("Medical history entry not found"));
 
-        if (!medicalHistoryAuthorization.canRead(authentication, medicalHistory.getPatient().getId())) {
+        UUID patientId = medicalHistory.getPatient().getId();
+        if (!medicalHistoryAuthorization.canRead(authentication, patientId)) {
+            auditLogService.record(AuditAction.READ, AuditOutcome.DENY,
+                    patientId, RESOURCE_TYPE, historyId.toString());
             throw new AccessDeniedException("Not authorized to read this medical history entry");
         }
+        auditLogService.record(AuditAction.READ, AuditOutcome.ALLOW,
+                patientId, RESOURCE_TYPE, historyId.toString());
         return mapToDTO(medicalHistory);
     }
 
@@ -136,11 +154,20 @@ public class MedicalHistoryService {
     }
 
 
+    /**
+     * PHI read reached from {@code DoctorController} at
+     * {@code GET /{doctorId}/patients/{patientId}/medical-history} (authorization is
+     * enforced upstream via {@code @medAuthz.canRead}). Records a READ/ALLOW audit
+     * entry keyed on the subject patient id (id-only, no PHI content).
+     */
     public List<MedicalHistoryDTO> getPatientMedicalHistoryByDoctor(UUID patientId, UUID doctorId) {
-        return medicalHistoryRepository.findByPatient_IdAndDoctor_IdOrderByCreatedAtDesc(patientId, doctorId)
+        List<MedicalHistoryDTO> histories = medicalHistoryRepository
+                .findByPatient_IdAndDoctor_IdOrderByCreatedAtDesc(patientId, doctorId)
                 .stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
+        auditLogService.record(AuditAction.READ, AuditOutcome.ALLOW, patientId, RESOURCE_TYPE, null);
+        return histories;
     }
 
     public String getLatestMedicalHistoryContent(UUID patientId) {
@@ -166,8 +193,12 @@ public class MedicalHistoryService {
             throw new RuntimeException("Doctor can only delete their own medical history entries");
         }
 
+        UUID patientId = medicalHistory.getPatient().getId();
         medicalHistoryRepository.delete(medicalHistory);
         log.info("Deleted medical history entry {} by doctor {}", historyId, doctorId);
+
+        auditLogService.record(AuditAction.DELETE, AuditOutcome.ALLOW,
+                patientId, RESOURCE_TYPE, historyId.toString());
     }
 
     private MedicalHistoryDTO mapToDTO(MedicalHistory medicalHistory) {

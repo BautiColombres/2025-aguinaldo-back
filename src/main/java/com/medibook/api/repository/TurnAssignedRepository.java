@@ -15,6 +15,9 @@ public interface TurnAssignedRepository extends JpaRepository<TurnAssigned, UUID
     
     @Query("SELECT COUNT(t) > 0 FROM TurnAssigned t WHERE t.doctor.id = :doctorId AND t.scheduledAt = :scheduledAt AND t.status NOT IN ('CANCELED', 'NO_SHOW')")
     boolean existsByDoctor_IdAndScheduledAtAndStatusNotCancelled(@Param("doctorId") UUID doctorId, @Param("scheduledAt") OffsetDateTime scheduledAt);
+
+    @Query("SELECT COUNT(t) > 0 FROM TurnAssigned t WHERE t.doctor.id = :doctorId AND t.scheduledAt = :scheduledAt AND t.id <> :excludeTurnId AND t.status NOT IN ('CANCELED', 'NO_SHOW')")
+    boolean existsConflictingTurnExcludingId(@Param("doctorId") UUID doctorId, @Param("scheduledAt") OffsetDateTime scheduledAt, @Param("excludeTurnId") UUID excludeTurnId);
     
     List<TurnAssigned> findByDoctor_IdOrderByScheduledAtDesc(UUID doctorId);
     

@@ -1168,7 +1168,7 @@ class BadgeStatisticsUpdateServiceTest {
     void updateDoctorBadgeProgress_HighCancellationRate_CoversFailureCondition() {
         Map<String, Object> statistics = new HashMap<>();
         statistics.put("documentation_count", 40);
-        statistics.put("total_turns_cancelled", 20); 
+        statistics.put("total_cancellations", 20);
         statistics.put("unique_patients_served", 12);
         statistics.put("requests_handled", 8);
         statistics.put("total_ratings_received", 100);
@@ -1206,6 +1206,106 @@ class BadgeStatisticsUpdateServiceTest {
 
         assert progress.containsKey("DOCTOR_AGILE_RESPONDER");
         assert progress.get("DOCTOR_AGILE_RESPONDER").equals(4 * 100.0 / 7);
+    }
+
+    // ----- BBUG-H1: cancellation stat key mismatch -----
+
+    @Test
+    void updateAfterTurnCancelledSync_IncrementsCanonicalTotalCancellationsKey() {
+        ObjectNode statsJson = objectMapper.createObjectNode();
+        statsJson.put("total_cancellations", 2);
+
+        BadgeStatistics existingStats = BadgeStatistics.builder()
+                .userId(userId)
+                .statistics(statsJson)
+                .progress(objectMapper.createObjectNode())
+                .build();
+
+        when(statisticsRepository.findByUserId(userId)).thenReturn(Optional.of(existingStats));
+        when(statisticsRepository.save(any(BadgeStatistics.class))).thenReturn(existingStats);
+
+        badgeStatisticsUpdateService.updateAfterTurnCancelledSync(userId);
+
+        JsonNode saved = existingStats.getStatistics();
+        assert saved.has("total_cancellations");
+        assert saved.get("total_cancellations").asInt() == 3;
+    }
+
+    @Test
+    void updateDoctorBadgeProgress_HighCancellationRate_ReadsTotalCancellationsKey() {
+        Map<String, Object> statistics = new HashMap<>();
+        statistics.put("total_cancellations", 20); // 20/80 = 25% >= 15% -> badge denied
+
+        Map<String, Object> progress = new HashMap<>();
+
+        badgeStatisticsUpdateService.updateDoctorBadgeProgress(userId, statistics, progress, 80);
+
+        assert progress.containsKey("DOCTOR_CONSISTENT_PROFESSIONAL");
+        assert progress.get("DOCTOR_CONSISTENT_PROFESSIONAL").equals(0.0);
+    }
+
+    @Test
+    void updateDoctorBadgeProgress_LowCancellationRate_ReadsTotalCancellationsKey() {
+        Map<String, Object> statistics = new HashMap<>();
+        statistics.put("total_cancellations", 5); // 5/80 = 6.25% < 15% -> badge earned
+
+        Map<String, Object> progress = new HashMap<>();
+
+        badgeStatisticsUpdateService.updateDoctorBadgeProgress(userId, statistics, progress, 80);
+
+        assert progress.containsKey("DOCTOR_CONSISTENT_PROFESSIONAL");
+        assert progress.get("DOCTOR_CONSISTENT_PROFESSIONAL").equals(100.0);
+    }
+
+    // ----- BBUG-H2: unique-patients counted distinctly, not per-turn -----
+
+    @Test
+    void updateAfterTurnCompletedSync_SamePatientTwice_UniqueCountStaysOne() {
+        user.setRole("DOCTOR");
+
+        User patient = new User();
+        patient.setId(UUID.randomUUID());
+
+        BadgeStatistics existingStats = BadgeStatistics.builder()
+                .userId(userId)
+                .statistics(objectMapper.createObjectNode())
+                .progress(objectMapper.createObjectNode())
+                .build();
+
+        when(statisticsRepository.findByUserId(userId)).thenReturn(Optional.of(existingStats));
+        when(statisticsRepository.save(any(BadgeStatistics.class))).thenReturn(existingStats);
+        when(turnAssignedRepository.findDistinctPatientsByDoctorId(userId)).thenReturn(List.of(patient));
+
+        badgeStatisticsUpdateService.updateAfterTurnCompletedSync(userId, patient.getId());
+        badgeStatisticsUpdateService.updateAfterTurnCompletedSync(userId, patient.getId());
+
+        JsonNode saved = existingStats.getStatistics();
+        assert saved.get("total_unique_patients").asInt() == 1;
+    }
+
+    @Test
+    void updateAfterTurnCompletedSync_TwoDistinctPatients_UniqueCountIsTwo() {
+        user.setRole("DOCTOR");
+
+        User patient1 = new User();
+        patient1.setId(UUID.randomUUID());
+        User patient2 = new User();
+        patient2.setId(UUID.randomUUID());
+
+        BadgeStatistics existingStats = BadgeStatistics.builder()
+                .userId(userId)
+                .statistics(objectMapper.createObjectNode())
+                .progress(objectMapper.createObjectNode())
+                .build();
+
+        when(statisticsRepository.findByUserId(userId)).thenReturn(Optional.of(existingStats));
+        when(statisticsRepository.save(any(BadgeStatistics.class))).thenReturn(existingStats);
+        when(turnAssignedRepository.findDistinctPatientsByDoctorId(userId)).thenReturn(List.of(patient1, patient2));
+
+        badgeStatisticsUpdateService.updateAfterTurnCompletedSync(userId, patient2.getId());
+
+        JsonNode saved = existingStats.getStatistics();
+        assert saved.get("total_unique_patients").asInt() == 2;
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.medibook.api.service;
 
+import com.medibook.api.util.LogMaskingUtil;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -71,13 +72,14 @@ public class MedicalCheckApiService {
                     return Boolean.TRUE.equals(existsValue);
                 }
                 // Fail-closed: absent or malformed "isUser" is treated as "not a user".
-                log.warn("Malformed medical-check response for email {}: missing/invalid 'isUser' field", email);
+                log.warn("Malformed medical-check response for email {}: missing/invalid 'isUser' field",
+                        LogMaskingUtil.maskEmail(email));
                 return false;
             }
 
             return false;
         } catch (Exception e) {
-            log.error("Error checking if user exists for email: {}", email, e);
+            log.error("Error checking if user exists for email: {}", LogMaskingUtil.maskEmail(email), e);
             return false;
         }
     }
@@ -111,14 +113,15 @@ public class MedicalCheckApiService {
 
             boolean success = response.getStatusCode() == HttpStatus.OK;
             if (success) {
-                log.info("Successfully registered medical check for email: {}", email);
+                log.info("Successfully registered medical check for email: {}", LogMaskingUtil.maskEmail(email));
             } else {
-                log.warn("Failed to register medical check for email: {}. Status: {}", email, response.getStatusCode());
+                log.warn("Failed to register medical check for email: {}. Status: {}",
+                        LogMaskingUtil.maskEmail(email), response.getStatusCode());
             }
-            
+
             return success;
         } catch (Exception e) {
-            log.error("Error registering medical check for email: {}", email, e);
+            log.error("Error registering medical check for email: {}", LogMaskingUtil.maskEmail(email), e);
             return false;
         }
     }
@@ -130,8 +133,8 @@ public class MedicalCheckApiService {
      */
     public void processMedicalCheckCompletion(String email) {
         try {
-            log.info("Processing medical check completion for email: {}", email);
-            
+            log.info("Processing medical check completion for email: {}", LogMaskingUtil.maskEmail(email));
+
             // First check if user exists in the external system
             if (isUser(email)) {
                 log.info("User exists in external system, registering medical check");
@@ -141,7 +144,7 @@ public class MedicalCheckApiService {
                 log.info("User does not exist in external system, skipping medical check registration");
             }
         } catch (Exception e) {
-            log.error("Error processing medical check completion for email: {}", email, e);
+            log.error("Error processing medical check completion for email: {}", LogMaskingUtil.maskEmail(email), e);
         }
     }
 }

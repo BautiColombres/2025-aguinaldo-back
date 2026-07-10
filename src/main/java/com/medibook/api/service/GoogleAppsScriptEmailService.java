@@ -2,6 +2,7 @@ package com.medibook.api.service;
 
 import com.medibook.api.dto.email.EmailRequestDto;
 import com.medibook.api.dto.email.EmailResponseDto;
+import com.medibook.api.util.LogMaskingUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -54,8 +55,8 @@ public class GoogleAppsScriptEmailService {
             long duration = System.currentTimeMillis() - startTime;
 
             if (response.getStatusCode() == HttpStatus.OK && "OK".equals(response.getBody())) {
-                log.info("Email sent successfully via Google Apps Script to: {} | Subject: {} | Time: {}ms", 
-                        emailRequest.getTo(), emailRequest.getSubject(), duration);
+                log.info("Email sent successfully via Google Apps Script to: {} | Subject: {} | Time: {}ms",
+                        LogMaskingUtil.maskEmail(emailRequest.getTo()), emailRequest.getSubject(), duration);
                         
                 return EmailResponseDto.builder()
                         .success(true)
@@ -79,8 +80,8 @@ public class GoogleAppsScriptEmailService {
             }
 
         } catch (RestClientException e) {
-            log.error("Error calling Google Apps Script for email to {}: {}", 
-                    emailRequest.getTo(), e.getMessage());
+            log.error("Error calling Google Apps Script for email to {}: {}",
+                    LogMaskingUtil.maskEmail(emailRequest.getTo()), e.getMessage());
             return EmailResponseDto.builder()
                     .success(false)
                     .message("Error communicating with email service")
@@ -88,8 +89,8 @@ public class GoogleAppsScriptEmailService {
                     .build();
                     
         } catch (Exception e) {
-            log.error("General error sending email via Google Apps Script to {}: {}", 
-                    emailRequest.getTo(), e.getMessage());
+            log.error("General error sending email via Google Apps Script to {}: {}",
+                    LogMaskingUtil.maskEmail(emailRequest.getTo()), e.getMessage());
             return EmailResponseDto.builder()
                     .success(false)
                     .message("General error sending email")

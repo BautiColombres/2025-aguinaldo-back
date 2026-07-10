@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+          http://www.liquibase.org/xml/ns/dbchangelog
+          https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
+
+    <!--
+        BBUG-H1: cancellation stat key mismatch.
+        The canonical key is `total_cancellations` (written by
+        BadgeStatisticsUpdateService#updateAfterTurnCancelledSync and read by
+        BadgeService). Historical rows (migrated from the legacy
+        patient_badge_statistics / doctor_badge_statistics tables in 0010) stored
+        the cancellation count under the stale key `total_turns_cancelled`, which
+        the consistency-badge logic used to read — leaving `total_cancellations`
+        empty and the badge always at 0.
+
+        This reconciles existing badge_statistics rows: for any row that still
+        carries the stale `total_turns_cancelled` key, set `total_cancellations`
+        to the already-canonical value if present, otherwise fall back to the
+        stale value, then drop the stale key.
+
+        The statistics column is jsonb; this migration only targets PostgreSQL.
+        Under H2 (tests) Liquibase is disabled and the schema comes from
+        ddl-auto, so the dbms precondition keeps this a no-op there.
+    -->
+    <changeSet id="0013-01-reconcile-total-cancellations" author="MediBook_Bugfix">
+        <preConditions onFail="MARK_RAN">
+            <dbms type="postgresql"/>
+            <tableExists tableName="badge_statistics"/>
+        </preConditions>
+
+        <sql>
+            UPDATE badge_statistics
+            SET statistics =
+                (statistics - 'total_turns_cancelled')
+                || jsonb_build_object(
+                    'total_cancellations',
+                    COALESCE(
+                        (statistics ->> 'total_cancellations')::int,
+                        (statistics ->> 'total_turns_cancelled')::int,
+                        0
+                    )
+                )
+            WHERE jsonb_exists(statistics, 'total_turns_cancelled');
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>

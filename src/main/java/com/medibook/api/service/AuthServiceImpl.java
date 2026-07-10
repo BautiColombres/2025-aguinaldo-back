@@ -13,6 +13,7 @@ import com.medibook.api.mapper.UserMapper;
 import com.medibook.api.repository.EmailVerificationRepository;
 import com.medibook.api.repository.RefreshTokenRepository;
 import com.medibook.api.repository.UserRepository;
+import com.medibook.api.util.LogMaskingUtil;
 
 import static com.medibook.api.util.DateTimeUtils.ARGENTINA_ZONE;
 
@@ -156,14 +157,14 @@ class AuthServiceImpl implements AuthService {
                 final String userName = user.getName();
 
                 emailService.sendWelcomeEmailToPatientAsync(userEmail, userName);
-                log.info("Email de bienvenida enviado a: {}", userEmail);                
-                
+                log.info("Email de bienvenida enviado a: {}", LogMaskingUtil.maskEmail(userEmail));
+
             } catch (Exception e) {
-                log.warn("Error enviando email de bienvenida a {}: {}", user.getEmail(), e.getMessage());            
+                log.warn("Error enviando email de bienvenida a {}: {}", LogMaskingUtil.maskEmail(user.getEmail()), e.getMessage());
             }
         }
-        
-        log.info("Cuenta verificada exitosamente para: {}", user.getEmail());
+
+        log.info("Cuenta verificada exitosamente para: {}", LogMaskingUtil.maskEmail(user.getEmail()));
     }
 
     @Override
@@ -193,9 +194,9 @@ class AuthServiceImpl implements AuthService {
             
             emailService.sendVerificationEmailAsync(userEmail, userName, verificationToken);                
             
-            log.info("Email de verificación enviado a: {}", userEmail);
+            log.info("Email de verificación enviado a: {}", LogMaskingUtil.maskEmail(userEmail));
         } catch (Exception e) {
-            log.warn("Error enviando email de verificación a {}: {}", user.getEmail(), e.getMessage());            
+            log.warn("Error enviando email de verificación a {}: {}", LogMaskingUtil.maskEmail(user.getEmail()), e.getMessage());
         }
 
         return userMapper.toRegisterResponse(user);
@@ -230,9 +231,9 @@ class AuthServiceImpl implements AuthService {
             
             emailService.sendVerificationEmailAsync(userEmail, userName, verificationToken);                
             
-            log.info("Email de verificación enviado a: {}", userEmail);
+            log.info("Email de verificación enviado a: {}", LogMaskingUtil.maskEmail(userEmail));
         } catch (Exception e) {
-            log.warn("Error enviando email de verificación a {}: {}", user.getEmail(), e.getMessage());            
+            log.warn("Error enviando email de verificación a {}: {}", LogMaskingUtil.maskEmail(user.getEmail()), e.getMessage());
         }
 
         return userMapper.toRegisterResponse(user);

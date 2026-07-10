@@ -2,6 +2,7 @@ package com.medibook.api.service;
 
 import com.medibook.api.dto.email.EmailRequestDto;
 import com.medibook.api.dto.email.EmailResponseDto;
+import com.medibook.api.util.LogMaskingUtil;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -47,8 +48,8 @@ public class EmailServiceImpl implements EmailService {
     private EmailResponseDto sendEmailWithRetry(EmailRequestDto emailRequest) throws Exception {
         
         if (!emailEnabled) {
-            log.info("Email disabled - simulating send to: {} | Subject: {}", 
-                    emailRequest.getTo(), emailRequest.getSubject());
+            log.info("Email disabled - simulating send to: {} | Subject: {}",
+                    LogMaskingUtil.maskEmail(emailRequest.getTo()), emailRequest.getSubject());
             return EmailResponseDto.builder()
                     .success(true)
                     .messageId("dev-mode-" + System.currentTimeMillis())
@@ -57,7 +58,7 @@ public class EmailServiceImpl implements EmailService {
         }
         
         if (emailRequest.getSubject() == null || emailRequest.getSubject().trim().isEmpty()) {
-            log.error("Empty email subject for: {}", emailRequest.getTo());
+            log.error("Empty email subject for: {}", LogMaskingUtil.maskEmail(emailRequest.getTo()));
             return EmailResponseDto.builder()
                     .success(false)
                     .message("Email subject is required")
@@ -77,8 +78,8 @@ public class EmailServiceImpl implements EmailService {
 
     @Recover
     public EmailResponseDto recoverFromEmailFailure(Exception ex, EmailRequestDto emailRequest) {
-        log.error("Definitive failure sending email to {} after all retries: {}", 
-                emailRequest.getTo(), ex.getMessage());
+        log.error("Definitive failure sending email to {} after all retries: {}",
+                LogMaskingUtil.maskEmail(emailRequest.getTo()), ex.getMessage());
         
         return EmailResponseDto.builder()
                 .success(false)

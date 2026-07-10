@@ -13,10 +13,12 @@ import com.medibook.api.repository.RatingRepository;
 import com.medibook.api.dto.Rating.SubcategoryCountDTO;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -32,10 +34,14 @@ public class RatingController {
     @PostMapping("/turns/{turnId}/rate")
     public ResponseEntity<Object> rateTurn(
             @PathVariable java.util.UUID turnId,
-            @RequestBody RatingRequestDTO dto,
+            @Valid @RequestBody RatingRequestDTO dto,
+            Authentication authentication,
             HttpServletRequest request) {
 
-        User authenticatedUser = (User) request.getAttribute("authenticatedUser");
+        // BSEC-M-5: read the principal from the standard SecurityContext (set by
+        // TokenAuthenticationFilter) instead of the request attribute. HttpServletRequest
+        // is still needed below only for request.getRequestURI() in the error path.
+        User authenticatedUser = (User) authentication.getPrincipal();
 
         if (!"PATIENT".equals(authenticatedUser.getRole()) && !"DOCTOR".equals(authenticatedUser.getRole())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)

@@ -9,6 +9,7 @@ import com.medibook.api.model.AuditOutcome;
 import com.medibook.api.repository.MedicalHistoryRepository;
 import com.medibook.api.repository.TurnAssignedRepository;
 import com.medibook.api.security.MedicalHistoryAuthorization;
+import com.medibook.api.util.LogMaskingUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.AccessDeniedException;
@@ -72,7 +73,8 @@ public class MedicalHistoryService {
                 .build();
 
         MedicalHistory savedHistory = medicalHistoryRepository.save(medicalHistory);
-        log.info("Added medical history entry for turn {} (patient {} by doctor {})", turnId, patient.getId(), doctorId);
+        log.info("Added medical history entry for turn {} (patient {} by doctor {})",
+                LogMaskingUtil.maskId(turnId), LogMaskingUtil.maskId(patient.getId()), LogMaskingUtil.maskId(doctorId));
 
         auditLogService.record(AuditAction.CREATE, AuditOutcome.ALLOW,
                 patient.getId(), RESOURCE_TYPE,
@@ -96,7 +98,8 @@ public class MedicalHistoryService {
         medicalHistory.setUpdatedAt(LocalDateTime.now(ARGENTINA_ZONE));
 
         MedicalHistory updatedHistory = medicalHistoryRepository.save(medicalHistory);
-        log.info("Updated medical history entry {} by doctor {}", historyId, doctorId);
+        log.info("Updated medical history entry {} by doctor {}",
+                LogMaskingUtil.maskId(historyId), LogMaskingUtil.maskId(doctorId));
 
         auditLogService.record(AuditAction.UPDATE, AuditOutcome.ALLOW,
                 updatedHistory.getPatient().getId(), RESOURCE_TYPE, historyId.toString());
@@ -195,7 +198,8 @@ public class MedicalHistoryService {
 
         UUID patientId = medicalHistory.getPatient().getId();
         medicalHistoryRepository.delete(medicalHistory);
-        log.info("Deleted medical history entry {} by doctor {}", historyId, doctorId);
+        log.info("Deleted medical history entry {} by doctor {}",
+                LogMaskingUtil.maskId(historyId), LogMaskingUtil.maskId(doctorId));
 
         auditLogService.record(AuditAction.DELETE, AuditOutcome.ALLOW,
                 patientId, RESOURCE_TYPE, historyId.toString());

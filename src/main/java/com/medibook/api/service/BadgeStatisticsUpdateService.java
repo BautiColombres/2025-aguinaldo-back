@@ -156,8 +156,8 @@ public class BadgeStatisticsUpdateService {
 
             Map<String, Object> statistics = parseJson(stats.getStatistics());
 
-            Integer uniquePatients = (Integer) statistics.getOrDefault("total_unique_patients", 0);
-            statistics.put("total_unique_patients", uniquePatients + 1);
+            int uniquePatients = turnAssignedRepository.findDistinctPatientsByDoctorId(userId).size();
+            statistics.put("total_unique_patients", uniquePatients);
 
             stats.setStatistics(objectMapper.valueToTree(statistics));
             statisticsRepository.save(stats);
@@ -385,7 +385,7 @@ public class BadgeStatisticsUpdateService {
             } else if ("DOCTOR".equals(user.getRole())) {
                 OffsetDateTime ninetyDaysAgo = now.minusDays(90);
                 statistics.put("turns_last_90_days", statistics.getOrDefault("total_turns_completed", 0));
-                statistics.put("cancellations_last_90_days", statistics.getOrDefault("total_turns_cancelled", 0));
+                statistics.put("cancellations_last_90_days", statistics.getOrDefault("total_cancellations", 0));
             }
 
         } catch (Exception e) {
@@ -719,7 +719,7 @@ public class BadgeStatisticsUpdateService {
             progress.put("DOCTOR_COMPLETE_DOCUMENTER", Math.max(current, Math.min(documentationCount * 100.0 / requiredDocumentation, 100.0)));
         }
 
-        Integer totalCancelled = (Integer) statistics.getOrDefault("total_turns_cancelled", 0);
+        Integer totalCancelled = (Integer) statistics.getOrDefault("total_cancellations", 0);
         double cancellationRate = totalTurns > 0 ? (totalCancelled * 100.0 / totalTurns) : 0;
         current = (Double) progress.getOrDefault("DOCTOR_CONSISTENT_PROFESSIONAL", 0.0);
         if (totalTurns >= 80) {

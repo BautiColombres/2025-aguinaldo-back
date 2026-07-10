@@ -102,7 +102,65 @@ class TurnAssignedControllerTest {
                 .andExpect(status().isBadRequest());  // Era 201 Created
     }
 
+    // BSEC-M-5: these lock the authorization outcome of endpoints whose principal source
+    // was converted from request.getAttribute("authenticatedUser") to the standard
+    // SecurityContext (Authentication#getPrincipal). They run through the real security
+    // filter chain, so a wrong-source/wrong-role regression would surface here.
+
+    @Test
+    void getTurnsByDoctor_AsOwnerDoctor_Ok() throws Exception {
+        mockMvc.perform(get("/api/turns/doctor/" + doctor.getId())
+                .header("Authorization", "Bearer " + doctorToken))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void getTurnsByDoctor_AsOtherDoctor_Forbidden() throws Exception {
+        User otherDoctor = createOtherDoctor();
+        String otherDoctorToken = getAuthToken(otherDoctor.getEmail(), "password123");
+
+        mockMvc.perform(get("/api/turns/doctor/" + doctor.getId())
+                .header("Authorization", "Bearer " + otherDoctorToken))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getTurnsByDoctor_AsPatient_Forbidden() throws Exception {
+        mockMvc.perform(get("/api/turns/doctor/" + doctor.getId())
+                .header("Authorization", "Bearer " + patientToken))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void getTurnsByDoctor_Anonymous_Unauthorized() throws Exception {
+        mockMvc.perform(get("/api/turns/doctor/" + doctor.getId()))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void getMyTurns_AsPatient_Ok() throws Exception {
+        mockMvc.perform(get("/api/turns/my-turns")
+                .header("Authorization", "Bearer " + patientToken))
+                .andExpect(status().isOk());
+    }
+
     // HELPER METHODS
+    private User createOtherDoctor() {
+        User other = new User();
+        other.setEmail("other-doctor@example.com");
+        other.setDni(55554444L);
+        other.setPasswordHash(passwordEncoder.encode("password123"));
+        other.setName("Otto");
+        other.setSurname("Ther");
+        other.setPhone("1122334455");
+        other.setBirthdate(LocalDate.of(1980, 3, 3));
+        other.setGender("MALE");
+        other.setRole("DOCTOR");
+        other.setStatus("ACTIVE");
+        other.setEmailVerified(true);
+        return userRepository.save(other);
+    }
+
     private User createTestPatient() {
         User patient = new User();
         patient.setEmail("patient@example.com");

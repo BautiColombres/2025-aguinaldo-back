@@ -48,6 +48,9 @@ class TurnFileServiceImplTest {
     private AuditLogService auditLogService;
 
     @Mock
+    private TurnFilePersister turnFilePersister;
+
+    @Mock
     private MultipartFile file;
 
     @InjectMocks
@@ -107,7 +110,7 @@ class TurnFileServiceImplTest {
                 })
                 .verifyComplete();
 
-        verify(turnFileRepository).save(any(TurnFile.class));
+        verify(turnFilePersister).persist(any(TurnFile.class));
         verify(notificationService).createPatientFileUploadedNotification(
                 eq(doctor.getId()), any(UUID.class), anyString(), anyString(), anyString(), eq(fileName));
         verify(auditLogService).record(any(), eq(AuditAction.CREATE), eq(AuditOutcome.ALLOW),
@@ -125,7 +128,7 @@ class TurnFileServiceImplTest {
                 .verify();
 
         verify(supabaseStorageService, never()).uploadFile(anyString(), anyString(), any());
-        verify(turnFileRepository, never()).save(any());
+        verify(turnFilePersister, never()).persist(any());
     }
 
     @Test
@@ -143,7 +146,93 @@ class TurnFileServiceImplTest {
                 .expectError(RuntimeException.class)
                 .verify();
 
-        verify(turnFileRepository, never()).save(any());
+        verify(turnFilePersister, never()).persist(any());
+    }
+
+    @Test
+    void uploadTurnFile_DbPersistenceFails_CompensatesWithStorageDelete() {
+        // BBUG-H4: storage upload succeeds but the DB persistence fails.
+        // The just-uploaded file MUST be deleted from storage (compensating action)
+        // so storage and DB do not diverge, and the error must propagate.
+        String fileName = "test-file.pdf";
+        String publicUrl = "https://storage.example.com/test-file.pdf";
+        RuntimeException dbError = new RuntimeException("DB write failed");
+
+        when(turnFileRepository.existsByTurnId(any(UUID.class))).thenReturn(false);
+        when(file.getOriginalFilename()).thenReturn(fileName);
+        when(supabaseStorageService.uploadFile(eq("archivosTurnos"), anyString(), eq(file)))
+                .thenReturn(Mono.just(publicUrl));
+        doThrow(dbError).when(turnFilePersister).persist(any(TurnFile.class));
+        when(supabaseStorageService.deleteFile(eq("archivosTurnos"), anyString()))
+                .thenReturn(Mono.empty());
+
+        // Act & Assert: the DB error propagates to the subscriber
+        StepVerifier.create(turnFileService.uploadTurnFile(turnId, file))
+                .expectErrorMatches(error -> "DB write failed".equals(error.getMessage()))
+                .verify();
+
+        // Compensating delete of the orphaned storage object
+        verify(supabaseStorageService).deleteFile(eq("archivosTurnos"), anyString());
+        // No downstream side effects once persistence failed
+        verify(auditLogService, never()).record(any(), any(), any(), any(), any(), any());
+        verify(notificationService, never()).createPatientFileUploadedNotification(
+                any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void uploadTurnFile_AuditFailure_DoesNotFailUpload() {
+        // BBUG-H4 rec #1: the file + DB row are already committed when the post-commit
+        // audit record runs. An audit hiccup MUST NOT surface to the client as an upload
+        // failure — the upload response must still be returned.
+        String fileName = "test-file.pdf";
+        String publicUrl = "https://storage.example.com/test-file.pdf";
+
+        when(turnFileRepository.existsByTurnId(any(UUID.class))).thenReturn(false);
+        when(file.getOriginalFilename()).thenReturn(fileName);
+        when(supabaseStorageService.uploadFile(eq("archivosTurnos"), anyString(), eq(file)))
+                .thenReturn(Mono.just(publicUrl));
+        when(turnAssignedRepository.findById(any(UUID.class))).thenReturn(Optional.of(turn));
+        doThrow(new RuntimeException("Audit error"))
+                .when(auditLogService).record(any(), any(), any(), any(), any(), any());
+
+        // Act & Assert: the committed upload still succeeds despite the audit failure
+        StepVerifier.create(turnFileService.uploadTurnFile(turnId, file))
+                .assertNext(result -> assertTrue(result.contains("\"url\":\"" + publicUrl + "\"")))
+                .verifyComplete();
+
+        verify(turnFilePersister).persist(any(TurnFile.class));
+    }
+
+    @Test
+    void uploadTurnFile_StorageKeyIsCollisionFreeAcrossUploads() {
+        // BBUG-H4 rec #2: the storage key must be collision-free (UUID suffix) so two
+        // concurrent uploads for the same turn+filename in the same millisecond cannot
+        // collide on the S3 key (a loser's compensating delete could otherwise remove a
+        // winner's committed object).
+        String fileName = "test-file.pdf";
+        String publicUrl = "https://storage.example.com/test-file.pdf";
+
+        when(turnFileRepository.existsByTurnId(any(UUID.class))).thenReturn(false);
+        when(file.getOriginalFilename()).thenReturn(fileName);
+        when(supabaseStorageService.uploadFile(eq("archivosTurnos"), anyString(), eq(file)))
+                .thenReturn(Mono.just(publicUrl));
+        when(turnAssignedRepository.findById(any(UUID.class))).thenReturn(Optional.of(turn));
+
+        org.mockito.ArgumentCaptor<String> keyCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
+
+        StepVerifier.create(turnFileService.uploadTurnFile(turnId, file)).expectNextCount(1).verifyComplete();
+        StepVerifier.create(turnFileService.uploadTurnFile(turnId, file)).expectNextCount(1).verifyComplete();
+
+        verify(supabaseStorageService, times(2))
+                .uploadFile(eq("archivosTurnos"), keyCaptor.capture(), eq(file));
+        java.util.List<String> keys = keyCaptor.getAllValues();
+
+        java.util.regex.Pattern uuidSuffix = java.util.regex.Pattern.compile(
+                ".*_[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+        assertTrue(uuidSuffix.matcher(keys.get(0)).matches(),
+                "storage key must end with a random UUID, was: " + keys.get(0));
+        assertNotEquals(keys.get(0), keys.get(1),
+                "two uploads of the same turn+filename must produce distinct storage keys");
     }
 
     @Test
@@ -167,7 +256,7 @@ class TurnFileServiceImplTest {
                 })
                 .verifyComplete();
 
-        verify(turnFileRepository).save(any(TurnFile.class));
+        verify(turnFilePersister).persist(any(TurnFile.class));
     }
 
     @Test
@@ -293,7 +382,7 @@ class TurnFileServiceImplTest {
                 })
                 .verifyComplete();
 
-        verify(turnFileRepository).save(any(TurnFile.class));
+        verify(turnFilePersister).persist(any(TurnFile.class));
         verify(notificationService, never()).createPatientFileUploadedNotification(
                 any(), any(), any(), any(), any(), any());
     }
@@ -324,7 +413,7 @@ class TurnFileServiceImplTest {
                 })
                 .verifyComplete();
 
-        verify(turnFileRepository).save(any(TurnFile.class));
+        verify(turnFilePersister).persist(any(TurnFile.class));
         verify(notificationService, never()).createPatientFileUploadedNotification(
                 any(), any(), any(), any(), any(), any());
     }
@@ -359,7 +448,7 @@ class TurnFileServiceImplTest {
                    !fileName.contains(")");
         }), eq(file));
 
-        verify(turnFileRepository).save(any(TurnFile.class));
+        verify(turnFilePersister).persist(any(TurnFile.class));
     }
 
     @Test
@@ -385,7 +474,7 @@ class TurnFileServiceImplTest {
             return fileName.startsWith("archivo_sin_nombre_");
         }), eq(file));
 
-        verify(turnFileRepository).save(any(TurnFile.class));
+        verify(turnFilePersister).persist(any(TurnFile.class));
     }
 
     @Test

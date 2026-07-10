@@ -18,5 +18,6 @@
     <include file="0010-badges.xml" relativeToChangelogFile="true"/>
     <include file="0011-admin-bootstrap-hardening.xml" relativeToChangelogFile="true"/>
     <include file="0012-audit-log.xml" relativeToChangelogFile="true"/>
+    <include file="0013-reconcile-cancellation-stat-key.xml" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>

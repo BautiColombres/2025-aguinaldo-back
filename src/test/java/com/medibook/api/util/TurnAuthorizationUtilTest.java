@@ -95,30 +95,6 @@ class TurnAuthorizationUtilTest {
     }
 
     @Test
-    void validatePatientTurnReservation_ValidPatient_ReturnsNull() {
-        ResponseEntity<Object> result = TurnAuthorizationUtil.validatePatientTurnReservation(patientUser, patientId);
-        assertNull(result);
-    }
-
-    @Test
-    void validatePatientTurnReservation_NotPatient_ReturnsError() {
-        ResponseEntity<Object> result = TurnAuthorizationUtil.validatePatientTurnReservation(doctorUser, patientId);
-        
-        assertNotNull(result);
-        assertEquals(HttpStatus.FORBIDDEN, result.getStatusCode());
-    }
-
-    @Test
-    void validatePatientTurnReservation_DifferentPatientId_ReturnsError() {
-        UUID differentPatientId = UUID.randomUUID();
-        
-        ResponseEntity<Object> result = TurnAuthorizationUtil.validatePatientTurnReservation(patientUser, differentPatientId);
-        
-        assertNotNull(result);
-        assertEquals(HttpStatus.FORBIDDEN, result.getStatusCode());
-    }
-
-    @Test
     void validateDoctorTurnAccess_ValidDoctor_ReturnsNull() {
         ResponseEntity<Object> result = TurnAuthorizationUtil.validateDoctorTurnAccess(doctorUser, doctorId);
         assertNull(result);

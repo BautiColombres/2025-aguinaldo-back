@@ -10,6 +10,7 @@ import com.medibook.api.repository.RatingRepository;
 import com.medibook.api.repository.TurnAssignedRepository;
 import com.medibook.api.repository.UserRepository;
 import com.medibook.api.util.DateTimeUtils;
+import com.medibook.api.util.LogMaskingUtil;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,6 +19,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import reactor.core.scheduler.Schedulers;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -118,9 +120,9 @@ public class TurnAssignedService {
                 saved.getId().toString()
             ).thenAccept(response -> {
                 if (response.isSuccess()) {
-                    log.info("Confirmación enviada al paciente: {}", patientEmail);
+                    log.info("Confirmación enviada al paciente: {}", LogMaskingUtil.maskEmail(patientEmail));
                 } else {
-                    log.warn("Falló confirmación al paciente {}: {}", patientEmail, response.getMessage());
+                    log.warn("Falló confirmación al paciente {}: {}", LogMaskingUtil.maskEmail(patientEmail), response.getMessage());
                 }
             });
             
@@ -133,14 +135,14 @@ public class TurnAssignedService {
                 saved.getId().toString()
             ).thenAccept(response -> {
                 if (response.isSuccess()) {
-                    log.info("Confirmación enviada al doctor: {}", doctorEmail);
+                    log.info("Confirmación enviada al doctor: {}", LogMaskingUtil.maskEmail(doctorEmail));
                 } else {
-                    log.warn("Falló confirmación al doctor {}: {}", doctorEmail, response.getMessage());
+                    log.warn("Falló confirmación al doctor {}: {}", LogMaskingUtil.maskEmail(doctorEmail), response.getMessage());
                 }
             });
             
-            log.info("Emails de confirmación de cita encolados para paciente {} y doctor {}", 
-                    patientEmail, doctorEmail);
+            log.info("Emails de confirmación de cita encolados para paciente {} y doctor {}",
+                    LogMaskingUtil.maskEmail(patientEmail), LogMaskingUtil.maskEmail(doctorEmail));
             
         } catch (Exception e) {
             log.warn("Error encolando emails de confirmación de cita: {}", e.getMessage());
@@ -168,30 +170,6 @@ public class TurnAssignedService {
         return mapper.toDTO(saved);
     }
 
-    public TurnAssigned reserveTurn(UUID turnId, UUID patientId) {
-        TurnAssigned turn = turnRepo.findById(turnId)
-                .orElseThrow(() -> new RuntimeException("Turn not found"));
-
-        if (!"AVAILABLE".equals(turn.getStatus())) {
-            throw new RuntimeException("Turn is not available");
-        }
-
-        User patient = userRepo.findById(patientId)
-                .orElseThrow(() -> new RuntimeException("Patient not found"));
-
-        turn.setPatient(patient);
-        turn.setStatus("RESERVED");
-        TurnAssigned saved = turnRepo.save(turn);
-
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-        long daysDifference = java.time.Duration.between(now, turn.getScheduledAt()).toDays();
-        if (daysDifference >= 1) {
-            badgeEvaluationTrigger.evaluateAfterAdvanceBooking(patientId);
-        }
-
-        return saved;
-    }
-    
     public List<TurnResponseDTO> getTurnsByDoctor(UUID doctorId) {
         List<TurnAssigned> turns = turnRepo.findByDoctor_IdOrderByScheduledAtDesc(doctorId);
         return turns.stream()
@@ -257,14 +235,22 @@ public class TurnAssignedService {
             badgeEvaluationTrigger.evaluateAfterTurnCancellation(turn.getPatient().getId());
         }
         
+        // BBUG-H4: never block a reactive chain from here. File cleanup on cancel is
+        // best-effort — offload the whole reactive delete onto a bounded scheduler and
+        // subscribe (fire-and-forget) instead of calling .block() on the caller thread.
+        // Success/failure are logged; cancellation succeeds regardless of file cleanup.
         try {
             if (turnFileService.fileExistsForTurn(turnId)) {
                 log.info("Deleting file associated with canceled turn: {}", turnId);
-                turnFileService.deleteTurnFile(turnId).block(); 
-                log.info("File successfully deleted for canceled turn: {}", turnId);
+                turnFileService.deleteTurnFile(turnId)
+                        .subscribeOn(Schedulers.boundedElastic())
+                        .subscribe(
+                                unused -> log.info("File successfully deleted for canceled turn: {}", turnId),
+                                error -> log.warn("Failed to delete file for canceled turn {}: {}",
+                                        turnId, error.getMessage()));
             }
         } catch (Exception e) {
-            log.warn("Failed to delete file for canceled turn {}: {}", turnId, e.getMessage());
+            log.warn("Failed to schedule file deletion for canceled turn {}: {}", turnId, e.getMessage());
         }
 
         try {
@@ -286,9 +272,9 @@ public class TurnAssignedService {
                 time
             ).thenAccept(response -> {
                 if (response.isSuccess()) {
-                    log.info("Email de cancelación enviado al paciente: {}", patientEmail);
+                    log.info("Email de cancelación enviado al paciente: {}", LogMaskingUtil.maskEmail(patientEmail));
                 } else {
-                    log.warn("Falló email de cancelación al paciente {}: {}", patientEmail, response.getMessage());
+                    log.warn("Falló email de cancelación al paciente {}: {}", LogMaskingUtil.maskEmail(patientEmail), response.getMessage());
                 }
             });
             
@@ -300,14 +286,14 @@ public class TurnAssignedService {
                 time
             ).thenAccept(response -> {
                 if (response.isSuccess()) {
-                    log.info("Email de cancelación enviado al doctor: {}", doctorEmail);
+                    log.info("Email de cancelación enviado al doctor: {}", LogMaskingUtil.maskEmail(doctorEmail));
                 } else {
-                    log.warn("Falló email de cancelación al doctor {}: {}", doctorEmail, response.getMessage());
+                    log.warn("Falló email de cancelación al doctor {}: {}", LogMaskingUtil.maskEmail(doctorEmail), response.getMessage());
                 }
             });
             
-            log.info("Emails de cancelación encolados para paciente {} y doctor {}", 
-                    patientEmail, doctorEmail);
+            log.info("Emails de cancelación encolados para paciente {} y doctor {}",
+                    LogMaskingUtil.maskEmail(patientEmail), LogMaskingUtil.maskEmail(doctorEmail));
             
         } catch (Exception e) {
             log.warn("Error encolando emails de cancelación: {}", e.getMessage());
@@ -367,7 +353,7 @@ public class TurnAssignedService {
         String email = result.healthCertificateEmail();
         if (email != null) {
             try {
-                log.info("Processing health certificate completion for patient: {}", email);
+                log.info("Processing health certificate completion for patient: {}", LogMaskingUtil.maskEmail(email));
                 medicalCheckApiService.processMedicalCheckCompletion(email);
             } catch (Exception e) {
                 log.error("Error processing medical check API call for turn: {}", turnId, e);

@@ -5,10 +5,12 @@ import com.medibook.api.dto.Turn.TurnModifyRequestResponseDTO;
 import com.medibook.api.entity.TurnAssigned;
 import com.medibook.api.entity.TurnModifyRequest;
 import com.medibook.api.entity.User;
+import com.medibook.api.exception.SlotUnavailableException;
 import com.medibook.api.mapper.TurnModifyRequestMapper;
 import com.medibook.api.repository.TurnAssignedRepository;
 import com.medibook.api.repository.TurnModifyRequestRepository;
 import com.medibook.api.util.DateTimeUtils;
+import com.medibook.api.util.LogMaskingUtil;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -109,8 +111,17 @@ public class TurnModifyRequestService {
         }
 
         TurnAssigned turn = request.getTurnAssigned();
-        
-        
+
+        // BBUG-H3: re-check the target slot is free (excluding the current turn)
+        // before committing, so approval cannot double-book an already-taken slot.
+        boolean slotTaken = turnAssignedRepository.existsConflictingTurnExcludingId(
+                request.getDoctor().getId(),
+                request.getRequestedScheduledAt(),
+                turn.getId());
+        if (slotTaken) {
+            throw new SlotUnavailableException("The requested time slot is no longer available");
+        }
+
         String oldDate = DateTimeUtils.formatDate(turn.getScheduledAt());
         String oldTime = DateTimeUtils.formatTime(turn.getScheduledAt());
         
@@ -142,9 +153,9 @@ public class TurnModifyRequestService {
                 newTime
             ).thenAccept(response -> {
                 if (response.isSuccess()) {
-                    log.info("Email de modificación aprobada enviado al paciente: {}", patientEmail);
+                    log.info("Email de modificación aprobada enviado al paciente: {}", LogMaskingUtil.maskEmail(patientEmail));
                 } else {
-                    log.warn("Falló email de modificación al paciente {}: {}", patientEmail, response.getMessage());
+                    log.warn("Falló email de modificación al paciente {}: {}", LogMaskingUtil.maskEmail(patientEmail), response.getMessage());
                 }
             });
             
@@ -158,14 +169,14 @@ public class TurnModifyRequestService {
                 newTime
             ).thenAccept(response -> {
                 if (response.isSuccess()) {
-                    log.info("Email de modificación aprobada enviado al doctor: {}", doctorEmail);
+                    log.info("Email de modificación aprobada enviado al doctor: {}", LogMaskingUtil.maskEmail(doctorEmail));
                 } else {
-                    log.warn("Falló email de modificación al doctor {}: {}", doctorEmail, response.getMessage());
+                    log.warn("Falló email de modificación al doctor {}: {}", LogMaskingUtil.maskEmail(doctorEmail), response.getMessage());
                 }
             });
             
-            log.info("Emails de modificación aprobada encolados para paciente {} y doctor {}", 
-                    patientEmail, doctorEmail);
+            log.info("Emails de modificación aprobada encolados para paciente {} y doctor {}",
+                    LogMaskingUtil.maskEmail(patientEmail), LogMaskingUtil.maskEmail(doctorEmail));
             
         } catch (Exception e) {
             log.warn("Error encolando emails de modificación aprobada: {}", e.getMessage());

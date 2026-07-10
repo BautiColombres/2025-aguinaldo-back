@@ -72,6 +72,66 @@ class TurnAssignedControllerTest {
                 .andExpect(jsonPath("$.status").value("SCHEDULED"));  // Ahora es SCHEDULED
     }
 
+    // BBUG-M4: a service-layer RuntimeException on create must map to a 4xx, never a 500.
+    @Test
+    void createTurn_SlotAlreadyTaken_Conflict() throws Exception {
+        // Truncate sub-second precision so the stored value and the slot-conflict query
+        // compare equal regardless of DB timestamp precision.
+        OffsetDateTime slot = OffsetDateTime.now().plusDays(1).withNano(0);
+
+        TurnCreateRequestDTO createRequest = new TurnCreateRequestDTO();
+        createRequest.setDoctorId(doctor.getId());
+        createRequest.setPatientId(patient.getId());
+        createRequest.setScheduledAt(slot);
+
+        // First booking succeeds.
+        mockMvc.perform(post("/api/turns")
+                .header("Authorization", "Bearer " + patientToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(createRequest)))
+                .andExpect(status().isCreated());
+
+        // Second booking for the same doctor + slot triggers "Time slot is already taken".
+        mockMvc.perform(post("/api/turns")
+                .header("Authorization", "Bearer " + patientToken)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(createRequest)))
+                .andExpect(status().isConflict());
+    }
+
+    // BBUG-M4: an UNEXPECTED service RuntimeException (i.e. not the known "slot already
+    // taken" business case) must NOT be masked as a 400 that echoes the raw internal
+    // message. It must propagate so the framework returns a generic 500 (no info leak).
+    // A booking against a non-existent doctor makes the service throw "Doctor not found",
+    // which is not the slot-conflict case. Against the OLD broad-catch this returned a
+    // 400 body containing "Doctor not found"; now it propagates.
+    @Test
+    void createTurn_UnexpectedServiceError_PropagatesNotLeakedAs400() throws Exception {
+        TurnCreateRequestDTO createRequest = new TurnCreateRequestDTO();
+        createRequest.setDoctorId(java.util.UUID.randomUUID()); // no such doctor
+        createRequest.setPatientId(patient.getId());
+        createRequest.setScheduledAt(OffsetDateTime.now().plusDays(1));
+
+        var result = mockMvc.perform(post("/api/turns")
+                        .header("Authorization", "Bearer " + patientToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(createRequest)))
+                .andReturn();
+
+        int status = result.getResponse().getStatus();
+        String body = result.getResponse().getContentAsString();
+
+        // Must NOT be masked as a client 400 (old broad-catch behavior).
+        org.junit.jupiter.api.Assertions.assertNotEquals(400, status,
+                "Unexpected service error must not be swallowed as a 400");
+        // Must surface as a server-side (5xx) fault.
+        org.junit.jupiter.api.Assertions.assertTrue(status >= 500,
+                "Unexpected service error must surface as a 5xx, was: " + status);
+        // Must NOT leak the raw internal exception message to the client (BSEC-M-3).
+        org.junit.jupiter.api.Assertions.assertFalse(body.contains("Doctor not found"),
+                "Response must not leak the raw internal exception message, was: " + body);
+    }
+
     // Test 2: createTurn_AsDoctor_Forbidden - problema de autorización (era 201 Created en lugar de 403 Forbidden)
     @Test
     void createTurn_AsDoctor_Forbidden() throws Exception {

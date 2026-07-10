@@ -360,8 +360,12 @@ class DoctorServiceComprehensiveTest {
         doctorWithoutProfile.setDoctorProfile(null);
         
         List<User> doctors = Arrays.asList(doctorUser1, doctorWithoutProfile);
-        when(userRepository.findDoctorsByStatus("ACTIVE")).thenReturn(doctors);        assertThrows(NullPointerException.class, () -> doctorService.getAllSpecialties());
-        
+        when(userRepository.findDoctorsByStatus("ACTIVE")).thenReturn(doctors);
+
+        // BBUG-M1: an ACTIVE doctor without a profile must be skipped, not NPE.
+        List<String> result = assertDoesNotThrow(() -> doctorService.getAllSpecialties());
+
+        assertEquals(List.of("Cardiología"), result);
         verify(userRepository).findDoctorsByStatus("ACTIVE");
     }
 

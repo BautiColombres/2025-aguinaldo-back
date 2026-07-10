@@ -77,8 +77,10 @@ public class User {
     public void setDoctorProfile(DoctorProfile doctorProfile) {
         this.doctorProfile = doctorProfile;
         if (doctorProfile != null) {
+            // BBUG-M5: only wire the back-reference. The shared primary key is derived
+            // from this user's id at persist time via @MapsId; forcing it here would copy
+            // a possibly-null id onto the profile.
             doctorProfile.setUser(this);
-            doctorProfile.setId(this.getId());
         }
     }
 

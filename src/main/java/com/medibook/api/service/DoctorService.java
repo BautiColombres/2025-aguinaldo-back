@@ -54,7 +54,10 @@ public class DoctorService {
     public List<String> getAllSpecialties() {
         List<User> doctors = userRepository.findDoctorsByStatus("ACTIVE");
         return doctors.stream()
-                .map(user -> user.getDoctorProfile().getSpecialty())
+                .map(User::getDoctorProfile)
+                .filter(java.util.Objects::nonNull)
+                .map(com.medibook.api.entity.DoctorProfile::getSpecialty)
+                .filter(java.util.Objects::nonNull)
                 .distinct()
                 .sorted()
                 .collect(Collectors.toList());

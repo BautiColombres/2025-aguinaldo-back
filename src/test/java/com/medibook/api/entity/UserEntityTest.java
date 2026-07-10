@@ -139,7 +139,9 @@ class UserEntityTest {
         assertEquals("CARDIOLOGY", validUser.getDoctorProfile().getSpecialty());
         assertEquals(30, validUser.getDoctorProfile().getSlotDurationMin());
         assertEquals(validUser, doctorProfile.getUser());
-        assertEquals(validUser.getId(), doctorProfile.getId());
+        // BBUG-M5: the setter no longer forces the id; the shared PK is derived from the
+        // user's id via @MapsId at persist time, so it remains null on an unpersisted profile.
+        assertNull(doctorProfile.getId());
     }
 
     @Test

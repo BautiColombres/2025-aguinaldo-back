@@ -70,6 +70,7 @@ class AdminProvisioningRunnerTest {
         assertEquals("ADMIN", saved.getRole());
         assertEquals("ACTIVE", saved.getStatus());
         assertTrue(saved.isMustResetPassword(), "provisioned admin must be flagged mustResetPassword");
+        assertTrue(saved.isEmailVerified(), "provisioned admin must be email-verified to be able to log in");
         assertFalse(saved.getPasswordHash().equals("Secret123!"), "password must be encoded");
         assertTrue(passwordEncoder.matches("Secret123!", saved.getPasswordHash()),
                 "stored hash must verify against the env password");
@@ -93,5 +94,28 @@ class AdminProvisioningRunnerTest {
         assertTrue(saved.isMustResetPassword());
         // No new DNI assignment / no duplicate creation: same instance updated.
         verify(userRepository, never()).existsByDni(any());
+    }
+
+    @Test
+    void updatePathMarksExistingAdminEmailVerifiedSoItCanLogIn() {
+        // Regression: an existing admin row seeded with emailVerified=false must be
+        // flipped to verified on the update path, otherwise signIn rejects it with 401.
+        User existing = new User();
+        existing.setEmail("admin@medibook.com");
+        existing.setRole("ADMIN");
+        existing.setStatus("ACTIVE");
+        existing.setEmailVerified(false);
+        existing.setPasswordHash("$2a$10$oldhasholdhasholdhasholdhasholdhasholdhash");
+        when(userRepository.findByEmail("admin@medibook.com")).thenReturn(Optional.of(existing));
+
+        runner("admin@medibook.com", "NewSecret123!").provisionAdmin();
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository, times(1)).save(captor.capture());
+        User saved = captor.getValue();
+        assertTrue(saved.isEmailVerified(),
+                "update path must set emailVerified=true so the provisioned admin can authenticate");
+        assertEquals("ACTIVE", saved.getStatus());
+        assertTrue(saved.isMustResetPassword());
     }
 }

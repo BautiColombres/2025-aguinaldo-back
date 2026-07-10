@@ -66,13 +66,15 @@ public class AdminProvisioningRunner implements ApplicationRunner {
             admin.setSurname("MediBook");
             admin.setRole("ADMIN");
             admin.setStatus("ACTIVE");
-            admin.setEmailVerified(true);
             admin.setDni(resolveDni());
         }
 
         admin.setPasswordHash(passwordEncoder.encode(adminPassword));
         admin.setRole("ADMIN");
         admin.setStatus("ACTIVE");
+        // Must be set on BOTH paths: an existing admin row seeded with
+        // emailVerified=false would otherwise be locked out by signIn (401).
+        admin.setEmailVerified(true);
         admin.setMustResetPassword(true);
 
         userRepository.save(admin);

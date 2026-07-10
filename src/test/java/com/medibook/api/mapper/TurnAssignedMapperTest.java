@@ -332,7 +332,7 @@ class TurnAssignedMapperTest {
 
     @Test
     void toDTO_AllStatusesHandledCorrectly() {
-        String[] statuses = {"AVAILABLE", "RESERVED", "COMPLETED", "CANCELLED"};
+        String[] statuses = {"AVAILABLE", "RESERVED", "COMPLETED", "CANCELED"};
         
         for (String status : statuses) {
             turnAssigned.setStatus(status);

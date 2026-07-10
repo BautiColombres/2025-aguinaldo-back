@@ -438,11 +438,13 @@ public class TurnAssignedService {
         TurnAssigned turn = turnRepo.findById(turnId)
                 .orElseThrow(() -> new RuntimeException("Turn not found"));
 
-        if ("CANCELED".equals(turn.getStatus()) || "CANCELLED".equals(turn.getStatus())) {
+        if ("CANCELED".equals(turn.getStatus())) {
             throw new RuntimeException("Cannot rate canceled turns");
         }
-        
-        OffsetDateTime now = OffsetDateTime.now();
+
+        // BBUG-M3: use the project timezone (ARGENTINA_ZONE) instead of the JVM default
+        // so the "turn has already occurred" check is evaluated against a well-defined zone.
+        OffsetDateTime now = OffsetDateTime.now(ARGENTINA_ZONE);
         if (turn.getScheduledAt().isAfter(now)) {
             throw new RuntimeException("Can only rate turns that have already occurred");
         }

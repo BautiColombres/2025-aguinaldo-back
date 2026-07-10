@@ -187,6 +187,41 @@ class TurnAssignedServiceTest {
     }
 
     @Test
+    void createTurn_TurnPersistenceFails_PropagatesException() {
+        // BBUG-M6: turn persistence is a must-succeed operation. A DB failure while
+        // saving the turn must propagate, not be swallowed.
+        when(userRepo.findById(doctorId)).thenReturn(Optional.of(doctor));
+        when(userRepo.findById(patientId)).thenReturn(Optional.of(patient));
+        when(turnRepo.existsByDoctor_IdAndScheduledAtAndStatusNotCancelled(doctorId, scheduledAt)).thenReturn(false);
+        when(turnRepo.save(any(TurnAssigned.class))).thenThrow(new RuntimeException("DB write failed"));
+
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> turnAssignedService.createTurn(createRequest));
+
+        assertEquals("DB write failed", ex.getMessage());
+        verify(turnRepo).save(any(TurnAssigned.class));
+    }
+
+    @Test
+    void createTurn_NotificationFails_TurnStillCreated() {
+        // BBUG-M6: the doctor notification is a best-effort side effect. A failure there
+        // must NOT fail turn creation.
+        when(userRepo.findById(doctorId)).thenReturn(Optional.of(doctor));
+        when(userRepo.findById(patientId)).thenReturn(Optional.of(patient));
+        when(turnRepo.existsByDoctor_IdAndScheduledAtAndStatusNotCancelled(doctorId, scheduledAt)).thenReturn(false);
+        when(turnRepo.save(any(TurnAssigned.class))).thenReturn(turnEntity);
+        when(mapper.toDTO(turnEntity)).thenReturn(turnResponse);
+        doThrow(new RuntimeException("notification broker down"))
+                .when(notificationService).createTurnReservedNotification(any(), any(), anyString(), anyString(), anyString());
+
+        TurnResponseDTO result = assertDoesNotThrow(() -> turnAssignedService.createTurn(createRequest));
+
+        assertNotNull(result);
+        assertEquals(turnId, result.getId());
+        verify(turnRepo).save(any(TurnAssigned.class));
+    }
+
+    @Test
     void createTurn_DoctorNotFound_ThrowsException() {
         when(userRepo.findById(doctorId)).thenReturn(Optional.empty());
 
@@ -797,6 +832,61 @@ class TurnAssignedServiceTest {
 
         assertTrue(ex.getMessage().contains("Invalid subcategory"));
         verify(ratingRepo, never()).save(any());
+    }
+
+    @Test
+    void addRating_FutureTurnScheduled_ThrowsException() {
+        // Contract: a turn scheduled in the FUTURE cannot be rated yet.
+        // (isAfter/isBefore compare instants, so this holds independently of the JVM
+        // default zone or ARGENTINA_ZONE — we assert the real future/past rule, not a
+        // zone-sensitivity the code does not have.)
+        TurnAssigned futureTurn = TurnAssigned.builder()
+                .id(turnId)
+                .doctor(doctor)
+                .patient(patient)
+                .scheduledAt(OffsetDateTime.now().plusHours(2))
+                .status("SCHEDULED")
+                .build();
+
+        when(turnRepo.findById(turnId)).thenReturn(Optional.of(futureTurn));
+
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> turnAssignedService.addRating(turnId, doctorId, 5, java.util.List.of()));
+
+        assertEquals("Can only rate turns that have already occurred", ex.getMessage());
+        verify(ratingRepo, never()).save(any());
+    }
+
+    @Test
+    void addRating_PastTurn_Rateable() {
+        // Contract: a turn that has already occurred (in the past) is rateable.
+        TurnAssigned pastTurn = TurnAssigned.builder()
+                .id(turnId)
+                .doctor(doctor)
+                .patient(patient)
+                .scheduledAt(OffsetDateTime.now().minusMinutes(5))
+                .status("COMPLETED")
+                .build();
+
+        when(turnRepo.findById(turnId)).thenReturn(Optional.of(pastTurn));
+        when(userRepo.findById(doctorId)).thenReturn(Optional.of(doctor));
+        when(ratingRepo.existsByTurnAssigned_IdAndRater_Id(turnId, doctorId)).thenReturn(false);
+
+        com.medibook.api.entity.Rating saved = com.medibook.api.entity.Rating.builder()
+                .id(UUID.randomUUID())
+                .turnAssigned(pastTurn)
+                .rater(doctor)
+                .rated(patient)
+                .score(5)
+                .createdAt(OffsetDateTime.now())
+                .build();
+        when(ratingRepo.save(any(com.medibook.api.entity.Rating.class))).thenReturn(saved);
+
+        com.medibook.api.entity.Rating result =
+                assertDoesNotThrow(() -> turnAssignedService.addRating(turnId, doctorId, 5, java.util.List.of()));
+
+        assertNotNull(result);
+        verify(ratingRepo).save(any(com.medibook.api.entity.Rating.class));
     }
 
     @Test

@@ -65,8 +65,23 @@ public class TurnAssignedController {
                 HttpStatus.BAD_REQUEST);
         }
         
-        TurnResponseDTO result = turnService.createTurn(dto);
-        return new ResponseEntity<>(result, HttpStatus.CREATED);
+        // BBUG-M4: only surface a message for the KNOWN business case (slot conflict → 409;
+        // that string is safe/intended). Any OTHER RuntimeException (NPE, persistence
+        // failure, unexpected fault) must NOT be echoed to the client nor masked as a 400:
+        // let it propagate so the framework returns a generic 500 (server.error.include-*
+        // are set to never), matching the BSEC-M-3 generic-message rule.
+        try {
+            TurnResponseDTO result = turnService.createTurn(dto);
+            return new ResponseEntity<>(result, HttpStatus.CREATED);
+        } catch (RuntimeException e) {
+            String message = e.getMessage();
+            if (message != null && message.contains("already taken")) {
+                return new ResponseEntity<>(
+                        Map.of("error", HttpStatus.CONFLICT.getReasonPhrase(), "message", message),
+                        HttpStatus.CONFLICT);
+            }
+            throw e;
+        }
     }
 
     @GetMapping("/available")

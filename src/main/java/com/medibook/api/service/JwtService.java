@@ -3,14 +3,13 @@ package com.medibook.api.service;
 import com.medibook.api.entity.User;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
-import java.security.Key;
 import java.util.Date;
 import java.util.function.Function;
 
@@ -55,12 +54,12 @@ public class JwtService {
 
     public String generateToken(User user) {
         return Jwts.builder()
-            .setSubject(user.getId().toString())
+            .subject(user.getId().toString())
             .claim("email",user.getEmail())
             .claim("role",user.getRole())
-            .setIssuedAt(new Date(System.currentTimeMillis()))
-            .setExpiration(new Date((System.currentTimeMillis()) + jwtExpiration))
-            .signWith(getSignInKey(), SignatureAlgorithm.HS256)
+            .issuedAt(new Date(System.currentTimeMillis()))
+            .expiration(new Date((System.currentTimeMillis()) + jwtExpiration))
+            .signWith(getSignInKey(), Jwts.SIG.HS256)
             .compact();
     }
 
@@ -78,13 +77,13 @@ public class JwtService {
     }
 
     public void validateTokenThrows(String token){
-        Jwts.parserBuilder()
-            .setSigningKey(getSignInKey())
+        Jwts.parser()
+            .verifyWith(getSignInKey())
             .build()
-            .parseClaimsJws(token);
+            .parseSignedClaims(token);
     }
 
-    private Key getSignInKey(){
+    private SecretKey getSignInKey(){
         return Keys.hmacShaKeyFor(secretKey.getBytes(StandardCharsets.UTF_8));
     }
 
@@ -94,10 +93,10 @@ public class JwtService {
     }
 
     private Claims extractAllClaims(String token) {
-        return Jwts.parserBuilder()
-            .setSigningKey(getSignInKey())
+        return Jwts.parser()
+            .verifyWith(getSignInKey())
             .build()
-            .parseClaimsJws(token)
-            .getBody();
+            .parseSignedClaims(token)
+            .getPayload();
     }
 }

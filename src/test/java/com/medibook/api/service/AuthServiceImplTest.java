@@ -4,6 +4,7 @@ import com.medibook.api.dto.Auth.RegisterRequestDTO;
 import com.medibook.api.dto.Auth.RegisterResponseDTO;
 import com.medibook.api.dto.Auth.SignInRequestDTO;
 import com.medibook.api.dto.Auth.SignInResponseDTO;
+import com.medibook.api.dto.Auth.SignInResultDTO;
 import com.medibook.api.dto.email.EmailResponseDto;
 import com.medibook.api.entity.RefreshToken;
 import com.medibook.api.entity.User;
@@ -381,22 +382,24 @@ class AuthServiceImplTest {
         refreshToken.setExpiresAt(ZonedDateTime.now().plusDays(7));
         when(refreshTokenRepository.save(any(RefreshToken.class))).thenReturn(refreshToken);
         
-        when(authMapper.toSignInResponse(eq(sampleUser), any(String.class), any(String.class))).thenReturn(
-            new SignInResponseDTO(sampleUser.getId(), sampleUser.getEmail(), sampleUser.getName(), 
+        when(authMapper.toSignInResponse(eq(sampleUser), any(String.class))).thenReturn(
+            new SignInResponseDTO(sampleUser.getId(), sampleUser.getEmail(), sampleUser.getName(),
                                 sampleUser.getSurname(), sampleUser.getRole(), sampleUser.getStatus(),
-                                "access_token", "refresh_token")
+                                "access_token")
         );
 
         when(jwtService.generateToken(sampleUser)).thenReturn("mocked-jwt-token");
-        SignInResponseDTO result = authService.signIn(validSignInRequest);
+        SignInResultDTO result = authService.signIn(validSignInRequest);
 
         assertNotNull(result);
-        assertNotNull(result.accessToken());
+        assertNotNull(result.response().accessToken());
+        // FSEC-H1 Stage 3: raw refresh token is carried on the result (for the cookie),
+        // NOT inside the response body DTO.
         assertNotNull(result.refreshToken());
-        assertEquals(sampleUser.getId(), result.id());
-        assertEquals(sampleUser.getEmail(), result.email());
-        assertEquals(sampleUser.getRole(), result.role());
-        
+        assertEquals(sampleUser.getId(), result.response().id());
+        assertEquals(sampleUser.getEmail(), result.response().email());
+        assertEquals(sampleUser.getRole(), result.response().role());
+
         verify(userRepository).findByEmail(validSignInRequest.email());
         verify(passwordEncoder).matches(validSignInRequest.password(), sampleUser.getPasswordHash());
         verify(refreshTokenRepository).save(any(RefreshToken.class));
@@ -471,18 +474,18 @@ class AuthServiceImplTest {
         refreshToken.setExpiresAt(ZonedDateTime.now().plusDays(7));
         when(refreshTokenRepository.save(any(RefreshToken.class))).thenReturn(refreshToken);
         
-        when(authMapper.toSignInResponse(eq(pendingDoctor), any(String.class), any(String.class))).thenReturn(
-            new SignInResponseDTO(pendingDoctor.getId(), pendingDoctor.getEmail(), pendingDoctor.getName(), 
+        when(authMapper.toSignInResponse(eq(pendingDoctor), any(String.class))).thenReturn(
+            new SignInResponseDTO(pendingDoctor.getId(), pendingDoctor.getEmail(), pendingDoctor.getName(),
                                 pendingDoctor.getSurname(), pendingDoctor.getRole(), pendingDoctor.getStatus(),
-                                "access_token", "refresh_token")
+                                "access_token")
         );
 
         when(jwtService.generateToken(pendingDoctor)).thenReturn("mocked-jwt-token");
-        SignInResponseDTO result = authService.signIn(validSignInRequest);
+        SignInResultDTO result = authService.signIn(validSignInRequest);
 
         assertNotNull(result);
-        assertEquals("PENDING", result.status());
-        assertEquals("DOCTOR", result.role());
+        assertEquals("PENDING", result.response().status());
+        assertEquals("DOCTOR", result.response().role());
         verify(userRepository).findByEmail(validSignInRequest.email());
         verify(passwordEncoder).matches(validSignInRequest.password(), pendingDoctor.getPasswordHash());
     }
@@ -527,21 +530,21 @@ class AuthServiceImplTest {
 
         when(refreshTokenRepository.findByTokenHash(hashToken("validRefreshToken"))).thenReturn(Optional.of(refreshToken));
         when(refreshTokenRepository.save(any(RefreshToken.class))).thenReturn(refreshToken);
-        when(authMapper.toSignInResponse(eq(sampleUser), any(String.class), any(String.class))).thenReturn(
-            new SignInResponseDTO(sampleUser.getId(), sampleUser.getEmail(), sampleUser.getName(), 
+        when(authMapper.toSignInResponse(eq(sampleUser), any(String.class))).thenReturn(
+            new SignInResponseDTO(sampleUser.getId(), sampleUser.getEmail(), sampleUser.getName(),
                                 sampleUser.getSurname(), sampleUser.getRole(), sampleUser.getStatus(),
-                                "new_access_token", "new_refresh_token")
+                                "new_access_token")
         );
 
         when(jwtService.generateToken(sampleUser)).thenReturn("new-mocked-jwt-token");
-        SignInResponseDTO result = authService.refreshToken("validRefreshToken");
+        SignInResultDTO result = authService.refreshToken("validRefreshToken");
 
         assertNotNull(result);
-        assertNotNull(result.accessToken());
+        assertNotNull(result.response().accessToken());
         assertNotNull(result.refreshToken());
-        assertEquals(sampleUser.getId(), result.id());
-        assertEquals(sampleUser.getEmail(), result.email());
-        
+        assertEquals(sampleUser.getId(), result.response().id());
+        assertEquals(sampleUser.getEmail(), result.response().email());
+
         verify(refreshTokenRepository).findByTokenHash(hashToken("validRefreshToken"));
         verify(refreshTokenRepository).save(any(RefreshToken.class));
     }
@@ -587,10 +590,10 @@ class AuthServiceImplTest {
 
         when(refreshTokenRepository.findByTokenHash(hashToken("validToken"))).thenReturn(Optional.of(refreshToken));
         when(refreshTokenRepository.save(any(RefreshToken.class))).thenReturn(refreshToken);
-        when(authMapper.toSignInResponse(eq(sampleUser), any(String.class), any(String.class))).thenReturn(
-            new SignInResponseDTO(sampleUser.getId(), sampleUser.getEmail(), sampleUser.getName(), 
+        when(authMapper.toSignInResponse(eq(sampleUser), any(String.class))).thenReturn(
+            new SignInResponseDTO(sampleUser.getId(), sampleUser.getEmail(), sampleUser.getName(),
                                 sampleUser.getSurname(), sampleUser.getRole(), sampleUser.getStatus(),
-                                "new_access_token", "new_refresh_token")
+                                "new_access_token")
         );
 
         // No debería lanzar excepción porque la implementación actual no valida el estado del usuario
@@ -696,18 +699,18 @@ class AuthServiceImplTest {
                 .thenReturn(token2);
 
         // Mock de authMapper para ambas respuestas
-        when(authMapper.toSignInResponse(eq(sampleUser), anyString(), anyString()))
-                .thenReturn(new SignInResponseDTO(sampleUser.getId(), sampleUser.getEmail(), sampleUser.getName(), 
-                        sampleUser.getSurname(), sampleUser.getRole(), sampleUser.getStatus(), "jwt1", "refresh1"))
+        when(authMapper.toSignInResponse(eq(sampleUser), anyString()))
                 .thenReturn(new SignInResponseDTO(sampleUser.getId(), sampleUser.getEmail(), sampleUser.getName(),
-                        sampleUser.getSurname(), sampleUser.getRole(), sampleUser.getStatus(), "jwt2", "refresh2"));
+                        sampleUser.getSurname(), sampleUser.getRole(), sampleUser.getStatus(), "jwt1"))
+                .thenReturn(new SignInResponseDTO(sampleUser.getId(), sampleUser.getEmail(), sampleUser.getName(),
+                        sampleUser.getSurname(), sampleUser.getRole(), sampleUser.getStatus(), "jwt2"));
 
         when(jwtService.generateToken(any(User.class)))
                 .thenReturn("token-1")
                 .thenReturn("token-2");
 
-        SignInResponseDTO result1 = authService.signIn(validSignInRequest);
-        SignInResponseDTO result2 = authService.signIn(validSignInRequest);
+        SignInResultDTO result1 = authService.signIn(validSignInRequest);
+        SignInResultDTO result2 = authService.signIn(validSignInRequest);
 
         assertNotEquals(result1.refreshToken(), result2.refreshToken());
     }

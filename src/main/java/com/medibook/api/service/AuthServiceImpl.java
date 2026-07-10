@@ -4,6 +4,7 @@ import com.medibook.api.dto.Auth.RegisterRequestDTO;
 import com.medibook.api.dto.Auth.RegisterResponseDTO;
 import com.medibook.api.dto.Auth.SignInRequestDTO;
 import com.medibook.api.dto.Auth.SignInResponseDTO;
+import com.medibook.api.dto.Auth.SignInResultDTO;
 import com.medibook.api.entity.EmailVerification;
 import com.medibook.api.entity.RefreshToken;
 import com.medibook.api.entity.User;
@@ -257,7 +258,7 @@ class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
-    public SignInResponseDTO signIn(SignInRequestDTO request) {
+    public SignInResultDTO signIn(SignInRequestDTO request) {
         User user = userRepository.findByEmail(request.email())
                 .orElseThrow(() -> new IllegalArgumentException("Correo o contraseña incorrecto"));
 
@@ -281,7 +282,9 @@ class AuthServiceImpl implements AuthService {
 
         String accessToken = generateAccessToken(user);
 
-        return authMapper.toSignInResponse(user, accessToken, rawToken);
+        // FSEC-H1 Stage 3: the raw refresh token is returned separately (for the httpOnly
+        // cookie), NEVER inside the SignInResponseDTO body.
+        return new SignInResultDTO(authMapper.toSignInResponse(user, accessToken), rawToken);
     }
 
     private boolean isUserAuthorizedToSignIn(User user) {
@@ -311,7 +314,7 @@ class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
-    public SignInResponseDTO refreshToken(String rawRefreshToken) {
+    public SignInResultDTO refreshToken(String rawRefreshToken) {
         
         String hashedInputToken = hashToken(rawRefreshToken);
 
@@ -333,7 +336,8 @@ class AuthServiceImpl implements AuthService {
         
         refreshTokenRepository.revokeTokenByHash(hashedInputToken, ZonedDateTime.now(ARGENTINA_ZONE));
 
-        return authMapper.toSignInResponse(user, newAccessToken, newRawToken);
+        // FSEC-H1 Stage 3: rotated raw refresh token travels via the cookie only.
+        return new SignInResultDTO(authMapper.toSignInResponse(user, newAccessToken), newRawToken);
     }
 
     private RefreshToken createRefreshToken(User user, String hashedToken) {

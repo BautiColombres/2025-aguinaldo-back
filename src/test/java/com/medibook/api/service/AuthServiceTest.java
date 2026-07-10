@@ -4,6 +4,7 @@ import com.medibook.api.dto.Auth.RegisterRequestDTO;
 import com.medibook.api.dto.Auth.RegisterResponseDTO;
 import com.medibook.api.dto.Auth.SignInRequestDTO;
 import com.medibook.api.dto.Auth.SignInResponseDTO;
+import com.medibook.api.dto.Auth.SignInResultDTO;
 import com.medibook.api.entity.RefreshToken;
 import com.medibook.api.entity.User;
 import com.medibook.api.mapper.AuthMapper;
@@ -266,27 +267,28 @@ class AuthServiceTest {
             user.getSurname(),
             user.getRole(),
             user.getStatus(),
-            "access-token",
-            "refresh-token"
+            "access-token"
         );
 
         when(userRepository.findByEmail(request.email())).thenReturn(Optional.of(user));
         when(passwordEncoder.matches(request.password(), user.getPasswordHash())).thenReturn(true);
-        when(authMapper.toSignInResponse(any(User.class), anyString(), anyString()))
+        when(authMapper.toSignInResponse(any(User.class), anyString()))
             .thenReturn(expectedResponse);
         when(jwtService.generateToken(any(User.class))).thenReturn("mocked-jwt-token");
 
-        SignInResponseDTO response = authService.signIn(request);
+        SignInResultDTO result = authService.signIn(request);
 
-        assertNotNull(response);
-        assertEquals(expectedResponse.id(), response.id());
-        assertEquals(expectedResponse.email(), response.email());
-        assertEquals(expectedResponse.accessToken(), response.accessToken());
+        assertNotNull(result);
+        assertEquals(expectedResponse.id(), result.response().id());
+        assertEquals(expectedResponse.email(), result.response().email());
+        assertEquals(expectedResponse.accessToken(), result.response().accessToken());
+        // FSEC-H1 Stage 3: refresh token is on the result (cookie), not in the body DTO.
+        assertNotNull(result.refreshToken());
 
         verify(userRepository).findByEmail(request.email());
         verify(passwordEncoder).matches(request.password(), user.getPasswordHash());
         verify(refreshTokenRepository).save(any(RefreshToken.class));
-        verify(authMapper).toSignInResponse(eq(user), anyString(), anyString());
+        verify(authMapper).toSignInResponse(eq(user), anyString());
     }
 
     @Test
@@ -364,28 +366,28 @@ class AuthServiceTest {
             user.getSurname(),
             user.getRole(),
             "ACTIVE",
-            mockedNewAccessToken,
-            "new-refresh-token-hash"
+            mockedNewAccessToken
         );
 
         when(jwtService.generateToken(any(User.class))).thenReturn(mockedNewAccessToken);
 
         when(refreshTokenRepository.findByTokenHash(hashToken(refreshTokenHash))).thenReturn(Optional.of(refreshToken));
-        
-        when(authMapper.toSignInResponse(any(User.class), anyString(), anyString()))
+
+        when(authMapper.toSignInResponse(any(User.class), anyString()))
             .thenReturn(expectedResponse);
 
-        SignInResponseDTO response = authService.refreshToken(refreshTokenHash);
+        SignInResultDTO result = authService.refreshToken(refreshTokenHash);
 
-        assertNotNull(response);
-        assertEquals(expectedResponse.id(), response.id());
-        assertEquals(expectedResponse.email(), response.email());
+        assertNotNull(result);
+        assertEquals(expectedResponse.id(), result.response().id());
+        assertEquals(expectedResponse.email(), result.response().email());
+        assertNotNull(result.refreshToken());
 
         verify(refreshTokenRepository).findByTokenHash(hashToken(refreshTokenHash));
         verify(refreshTokenRepository).save(any(RefreshToken.class));
         verify(refreshTokenRepository).revokeTokenByHash(eq(hashToken(refreshTokenHash)), any(ZonedDateTime.class));
-        
-        verify(authMapper).toSignInResponse(eq(user), anyString(), anyString());
+
+        verify(authMapper).toSignInResponse(eq(user), anyString());
     }
 
     @Test

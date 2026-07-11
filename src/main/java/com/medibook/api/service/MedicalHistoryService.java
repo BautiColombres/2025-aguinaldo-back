@@ -1,6 +1,7 @@
 package com.medibook.api.service;
 
 import com.medibook.api.dto.MedicalHistoryDTO;
+import com.medibook.api.dto.TagFrequencyDTO;
 import com.medibook.api.entity.MedicalHistory;
 import com.medibook.api.entity.TurnAssigned;
 import com.medibook.api.entity.User;
@@ -19,9 +20,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
@@ -37,9 +43,16 @@ public class MedicalHistoryService {
     private final AuditLogService auditLogService;
     private static final ZoneId ARGENTINA_ZONE = ZoneId.of("America/Argentina/Buenos_Aires");
     private static final String RESOURCE_TYPE = "MEDICAL_HISTORY";
+    private static final int MAX_TAGS = 10;
+    private static final int MAX_TAG_LENGTH = 50;
+    /**
+     * Server-side character allowlist for tags (OQ-6): Unicode letters
+     * (incl. accents / ñ), digits, spaces and hyphens. Anything else is rejected.
+     */
+    private static final Pattern TAG_ALLOWLIST = Pattern.compile("^[\\p{L}\\p{Nd} -]+$");
 
     @Transactional
-    public MedicalHistoryDTO addMedicalHistory(UUID doctorId, UUID turnId, String content) {
+    public MedicalHistoryDTO addMedicalHistory(UUID doctorId, UUID turnId, String content, List<String> tags) {
         TurnAssigned turn = turnAssignedRepository.findById(turnId)
                 .orElseThrow(() -> new RuntimeException("Turn not found"));
 
@@ -70,6 +83,7 @@ public class MedicalHistoryService {
                 .doctor(doctor)
                 .turn(turn)
                 .content(content)
+                .tags(normalizeTags(tags))
                 .build();
 
         MedicalHistory savedHistory = medicalHistoryRepository.save(medicalHistory);
@@ -86,7 +100,7 @@ public class MedicalHistoryService {
     }
 
     @Transactional
-    public MedicalHistoryDTO updateMedicalHistory(UUID doctorId, UUID historyId, String content) {
+    public MedicalHistoryDTO updateMedicalHistory(UUID doctorId, UUID historyId, String content, List<String> tags) {
         MedicalHistory medicalHistory = medicalHistoryRepository.findById(historyId)
                 .orElseThrow(() -> new RuntimeException("Medical history entry not found"));
 
@@ -95,6 +109,7 @@ public class MedicalHistoryService {
         }
 
         medicalHistory.setContent(content);
+        medicalHistory.setTags(normalizeTags(tags));
         medicalHistory.setUpdatedAt(LocalDateTime.now(ARGENTINA_ZONE));
 
         MedicalHistory updatedHistory = medicalHistoryRepository.save(medicalHistory);
@@ -205,6 +220,69 @@ public class MedicalHistoryService {
                 patientId, RESOURCE_TYPE, historyId.toString());
     }
 
+    /**
+     * Per-patient, per-requesting-doctor tag frequencies (OQ-5). Authorization is
+     * enforced INSIDE the service (OQ-8a) so a DENY is audited: the caller must be
+     * the doctor named in the path ({@code principal.id == doctorId}) AND have an
+     * active relationship with the patient ({@code @medAuthz.canRead}). On denial a
+     * READ/DENY audit row (id-only, no PHI) is written and access is refused; the
+     * frequency query itself is scoped to this doctor's own entries only.
+     */
+    public List<TagFrequencyDTO> getFrequentTags(Authentication authentication, UUID doctorId, UUID patientId) {
+        UUID principalId = (authentication != null
+                && authentication.getPrincipal() instanceof User principal) ? principal.getId() : null;
+        boolean isOwner = principalId != null && principalId.equals(doctorId);
+
+        if (!isOwner || !medicalHistoryAuthorization.canRead(authentication, patientId)) {
+            auditLogService.record(AuditAction.READ, AuditOutcome.DENY, patientId, RESOURCE_TYPE, null);
+            throw new AccessDeniedException("Not authorized to read this patient's tags");
+        }
+
+        auditLogService.record(AuditAction.READ, AuditOutcome.ALLOW, patientId, RESOURCE_TYPE, null);
+
+        return medicalHistoryRepository.findTagFrequencyByPatientAndDoctor(patientId, doctorId)
+                .stream()
+                .map(row -> TagFrequencyDTO.builder()
+                        .tag((String) row[0])
+                        .count(((Number) row[1]).longValue())
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Normalizes tags per OQ-6: trim, reject blanks, lowercase, dedupe (preserving
+     * order), enforce the character allowlist and count/length caps. Rejections are
+     * surfaced as {@link IllegalArgumentException} (mapped to HTTP 400 by the
+     * controller). A {@code null} input yields an empty set.
+     */
+    private Set<String> normalizeTags(List<String> rawTags) {
+        Set<String> normalized = new LinkedHashSet<>();
+        if (rawTags == null) {
+            return normalized;
+        }
+        for (String raw : rawTags) {
+            if (raw == null) {
+                throw new IllegalArgumentException("Tags must not be blank");
+            }
+            String trimmed = raw.trim();
+            if (trimmed.isEmpty()) {
+                throw new IllegalArgumentException("Tags must not be blank");
+            }
+            if (trimmed.length() > MAX_TAG_LENGTH) {
+                throw new IllegalArgumentException("Each tag must be at most " + MAX_TAG_LENGTH + " characters");
+            }
+            if (!TAG_ALLOWLIST.matcher(trimmed).matches()) {
+                throw new IllegalArgumentException(
+                        "Tags may only contain letters, digits, spaces and hyphens");
+            }
+            normalized.add(trimmed.toLowerCase(Locale.ROOT));
+        }
+        if (normalized.size() > MAX_TAGS) {
+            throw new IllegalArgumentException("A medical history entry can have at most " + MAX_TAGS + " tags");
+        }
+        return normalized;
+    }
+
     private MedicalHistoryDTO mapToDTO(MedicalHistory medicalHistory) {
         return MedicalHistoryDTO.builder()
                 .id(medicalHistory.getId())
@@ -218,6 +296,9 @@ public class MedicalHistoryService {
                 .doctorName(medicalHistory.getDoctor().getName())
                 .doctorSurname(medicalHistory.getDoctor().getSurname())
         .turnId(medicalHistory.getTurn() != null ? medicalHistory.getTurn().getId() : null)
+                .tags(medicalHistory.getTags() != null
+                        ? new ArrayList<>(medicalHistory.getTags())
+                        : new ArrayList<>())
                 .build();
     }
 }

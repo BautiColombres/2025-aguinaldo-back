@@ -20,5 +20,6 @@
     <include file="0012-audit-log.xml" relativeToChangelogFile="true"/>
     <include file="0013-reconcile-cancellation-stat-key.xml" relativeToChangelogFile="true"/>
     <include file="0014-standardize-canceled-status.xml" relativeToChangelogFile="true"/>
+    <include file="0015-medical-history-tags.xml" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>

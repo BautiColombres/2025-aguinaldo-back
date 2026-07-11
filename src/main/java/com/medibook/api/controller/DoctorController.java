@@ -8,6 +8,7 @@ import com.medibook.api.dto.UpdateMedicalHistoryRequestDTO;
 import com.medibook.api.dto.CreateMedicalHistoryRequestDTO;
 import com.medibook.api.dto.UpdateMedicalHistoryContentRequestDTO;
 import com.medibook.api.dto.MedicalHistoryDTO;
+import com.medibook.api.dto.TagFrequencyDTO;
 import com.medibook.api.service.DoctorAvailabilityService;
 import com.medibook.api.service.DoctorService;
 import com.medibook.api.service.MedicalHistoryService;
@@ -15,9 +16,13 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.Map;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -101,7 +106,7 @@ public class DoctorController {
             @Valid @RequestBody CreateMedicalHistoryRequestDTO request) {
         
     MedicalHistoryDTO medicalHistory = medicalHistoryService.addMedicalHistory(
-        doctorId, request.getTurnId(), request.getContent());
+        doctorId, request.getTurnId(), request.getContent(), request.getTags());
         return ResponseEntity.ok(medicalHistory);
     }
 
@@ -113,7 +118,7 @@ public class DoctorController {
             @Valid @RequestBody UpdateMedicalHistoryContentRequestDTO request) {
         
         MedicalHistoryDTO updatedHistory = medicalHistoryService.updateMedicalHistory(
-                doctorId, historyId, request.getContent());
+                doctorId, historyId, request.getContent(), request.getTags());
         return ResponseEntity.ok(updatedHistory);
     }
 
@@ -135,6 +140,32 @@ public class DoctorController {
         return ResponseEntity.ok(histories);
     }
 
+    /**
+     * Per-patient tag frequencies scoped to the requesting doctor's own entries
+     * (OQ-5). Coarse-gated to {@code DOCTOR} only; the fine-grained
+     * {@code principal.id == doctorId} + {@code @medAuthz.canRead} ownership check
+     * (and its id-only DENY audit) is enforced INSIDE the service (OQ-8a) — putting
+     * the ownership SpEL in {@code @PreAuthorize} would throw before the service and
+     * audit nothing.
+     * <p>
+     * DELIBERATE: the {@code hasRole('DOCTOR')}-only gate excludes ADMIN (→ 403) by
+     * design and intentionally diverges from the sibling
+     * {@link #getPatientMedicalHistoryByDoctor} (which allows ADMIN). Tag frequency is
+     * a per-doctor clinical inference (OQ-5 per-doctor scoping); an admin has no "own
+     * doctorId" to satisfy the service {@code isOwner} check, so admin is excluded on
+     * purpose — a future refactor must NOT "harmonize" the two matchers.
+     */
+    @GetMapping("/{doctorId}/patients/{patientId}/tags")
+    @PreAuthorize("hasRole('DOCTOR')")
+    public ResponseEntity<List<TagFrequencyDTO>> getPatientFrequentTags(
+            @PathVariable UUID doctorId,
+            @PathVariable UUID patientId,
+            Authentication authentication) {
+
+        List<TagFrequencyDTO> tags = medicalHistoryService.getFrequentTags(authentication, doctorId, patientId);
+        return ResponseEntity.ok(tags);
+    }
+
     @DeleteMapping("/{doctorId}/medical-history/{historyId}")
     @PreAuthorize("hasRole('DOCTOR') and authentication.principal.id.equals(#doctorId)")
     public ResponseEntity<Void> deleteMedicalHistory(
@@ -150,5 +181,14 @@ public class DoctorController {
     public ResponseEntity<DoctorMetricsDTO> getDoctorMetrics(@PathVariable UUID doctorId) {
         DoctorMetricsDTO metrics = doctorService.getDoctorMetrics(doctorId);
         return ResponseEntity.ok(metrics);
+    }
+
+    /**
+     * Maps invalid tag input (server-side allowlist / blank rejection in
+     * {@code MedicalHistoryService}) to HTTP 400.
+     */
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<Map<String, String>> handleIllegalArgument(IllegalArgumentException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of("error", ex.getMessage()));
     }
 }

@@ -117,7 +117,7 @@ public class DoctorService {
             throw new RuntimeException("Turn does not belong to the specified patient");
         }
 
-        medicalHistoryService.addMedicalHistory(doctorId, turnId, medicalHistory);
+        medicalHistoryService.addMedicalHistory(doctorId, turnId, medicalHistory, null);
     }
 
     private PatientDTO mapPatientToDTO(User patient, String latestMedicalHistory, Map<String, Long> ratings) {

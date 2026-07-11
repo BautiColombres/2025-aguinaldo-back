@@ -6,6 +6,7 @@ import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @Data
@@ -24,4 +25,5 @@ public class MedicalHistoryDTO {
     private String doctorName;
     private String doctorSurname;
     private UUID turnId;
+    private List<String> tags;
 }

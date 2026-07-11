@@ -4,10 +4,16 @@ import com.medibook.api.dto.MedicalHistoryDTO;
 import com.medibook.api.entity.MedicalHistory;
 import com.medibook.api.entity.TurnAssigned;
 import com.medibook.api.entity.User;
+import com.medibook.api.model.AuditAction;
+import com.medibook.api.model.AuditOutcome;
 import com.medibook.api.repository.MedicalHistoryRepository;
 import com.medibook.api.repository.TurnAssignedRepository;
+import com.medibook.api.security.MedicalHistoryAuthorization;
+import com.medibook.api.util.LogMaskingUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,7 +33,10 @@ public class MedicalHistoryService {
     private final MedicalHistoryRepository medicalHistoryRepository;
     private final TurnAssignedRepository turnAssignedRepository;
     private final BadgeEvaluationTriggerService badgeEvaluationTrigger;
+    private final MedicalHistoryAuthorization medicalHistoryAuthorization;
+    private final AuditLogService auditLogService;
     private static final ZoneId ARGENTINA_ZONE = ZoneId.of("America/Argentina/Buenos_Aires");
+    private static final String RESOURCE_TYPE = "MEDICAL_HISTORY";
 
     @Transactional
     public MedicalHistoryDTO addMedicalHistory(UUID doctorId, UUID turnId, String content) {
@@ -64,7 +73,12 @@ public class MedicalHistoryService {
                 .build();
 
         MedicalHistory savedHistory = medicalHistoryRepository.save(medicalHistory);
-        log.info("Added medical history entry for turn {} (patient {} by doctor {})", turnId, patient.getId(), doctorId);
+        log.info("Added medical history entry for turn {} (patient {} by doctor {})",
+                LogMaskingUtil.maskId(turnId), LogMaskingUtil.maskId(patient.getId()), LogMaskingUtil.maskId(doctorId));
+
+        auditLogService.record(AuditAction.CREATE, AuditOutcome.ALLOW,
+                patient.getId(), RESOURCE_TYPE,
+                savedHistory.getId() != null ? savedHistory.getId().toString() : null);
 
         badgeEvaluationTrigger.evaluateAfterMedicalHistoryDocumented(doctorId, content);
 
@@ -84,8 +98,12 @@ public class MedicalHistoryService {
         medicalHistory.setUpdatedAt(LocalDateTime.now(ARGENTINA_ZONE));
 
         MedicalHistory updatedHistory = medicalHistoryRepository.save(medicalHistory);
-        log.info("Updated medical history entry {} by doctor {}", historyId, doctorId);
-        
+        log.info("Updated medical history entry {} by doctor {}",
+                LogMaskingUtil.maskId(historyId), LogMaskingUtil.maskId(doctorId));
+
+        auditLogService.record(AuditAction.UPDATE, AuditOutcome.ALLOW,
+                updatedHistory.getPatient().getId(), RESOURCE_TYPE, historyId.toString());
+
         badgeEvaluationTrigger.evaluateAfterMedicalHistoryDocumented(doctorId, content);
         
         return mapToDTO(updatedHistory);
@@ -98,6 +116,39 @@ public class MedicalHistoryService {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * Authorization-enforced read of a patient's medical history (defense in depth,
+     * mirrors the controller {@code @PreAuthorize("@medAuthz.canRead(...)")} check).
+     */
+    public List<MedicalHistoryDTO> getPatientMedicalHistoryAuthorized(Authentication authentication, UUID patientId) {
+        if (!medicalHistoryAuthorization.canRead(authentication, patientId)) {
+            auditLogService.record(AuditAction.READ, AuditOutcome.DENY, patientId, RESOURCE_TYPE, null);
+            throw new AccessDeniedException("Not authorized to read this patient's medical history");
+        }
+        auditLogService.record(AuditAction.READ, AuditOutcome.ALLOW, patientId, RESOURCE_TYPE, null);
+        return getPatientMedicalHistory(patientId);
+    }
+
+    /**
+     * Authorization-enforced lookup of a single medical history entry by id.
+     * Loads the entry first so the patient relationship can be evaluated, then
+     * applies the same {@code @medAuthz} read rules.
+     */
+    public MedicalHistoryDTO getMedicalHistoryById(Authentication authentication, UUID historyId) {
+        MedicalHistory medicalHistory = medicalHistoryRepository.findById(historyId)
+                .orElseThrow(() -> new RuntimeException("Medical history entry not found"));
+
+        UUID patientId = medicalHistory.getPatient().getId();
+        if (!medicalHistoryAuthorization.canRead(authentication, patientId)) {
+            auditLogService.record(AuditAction.READ, AuditOutcome.DENY,
+                    patientId, RESOURCE_TYPE, historyId.toString());
+            throw new AccessDeniedException("Not authorized to read this medical history entry");
+        }
+        auditLogService.record(AuditAction.READ, AuditOutcome.ALLOW,
+                patientId, RESOURCE_TYPE, historyId.toString());
+        return mapToDTO(medicalHistory);
+    }
+
     public List<MedicalHistoryDTO> getDoctorMedicalHistoryEntries(UUID doctorId) {
         return medicalHistoryRepository.findByDoctor_IdOrderByCreatedAtDesc(doctorId)
                 .stream()
@@ -106,11 +157,20 @@ public class MedicalHistoryService {
     }
 
 
+    /**
+     * PHI read reached from {@code DoctorController} at
+     * {@code GET /{doctorId}/patients/{patientId}/medical-history} (authorization is
+     * enforced upstream via {@code @medAuthz.canRead}). Records a READ/ALLOW audit
+     * entry keyed on the subject patient id (id-only, no PHI content).
+     */
     public List<MedicalHistoryDTO> getPatientMedicalHistoryByDoctor(UUID patientId, UUID doctorId) {
-        return medicalHistoryRepository.findByPatient_IdAndDoctor_IdOrderByCreatedAtDesc(patientId, doctorId)
+        List<MedicalHistoryDTO> histories = medicalHistoryRepository
+                .findByPatient_IdAndDoctor_IdOrderByCreatedAtDesc(patientId, doctorId)
                 .stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
+        auditLogService.record(AuditAction.READ, AuditOutcome.ALLOW, patientId, RESOURCE_TYPE, null);
+        return histories;
     }
 
     public String getLatestMedicalHistoryContent(UUID patientId) {
@@ -136,8 +196,13 @@ public class MedicalHistoryService {
             throw new RuntimeException("Doctor can only delete their own medical history entries");
         }
 
+        UUID patientId = medicalHistory.getPatient().getId();
         medicalHistoryRepository.delete(medicalHistory);
-        log.info("Deleted medical history entry {} by doctor {}", historyId, doctorId);
+        log.info("Deleted medical history entry {} by doctor {}",
+                LogMaskingUtil.maskId(historyId), LogMaskingUtil.maskId(doctorId));
+
+        auditLogService.record(AuditAction.DELETE, AuditOutcome.ALLOW,
+                patientId, RESOURCE_TYPE, historyId.toString());
     }
 
     private MedicalHistoryDTO mapToDTO(MedicalHistory medicalHistory) {

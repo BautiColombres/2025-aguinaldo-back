@@ -21,7 +21,7 @@ public class BadgeController {
     private final BadgeService badgeService;
 
     @GetMapping("/{userId}")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("#userId.equals(authentication.principal.id) or hasRole('ADMIN')")
     public ResponseEntity<BadgesResponseDTO> getUserBadges(@PathVariable UUID userId) {
         BadgesResponseDTO badges = badgeService.getUserBadges(userId);
         return ResponseEntity.ok(badges);
@@ -36,7 +36,7 @@ public class BadgeController {
     }
 
     @GetMapping("/{userId}/progress")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("#userId.equals(authentication.principal.id) or hasRole('ADMIN')")
     public ResponseEntity<List<BadgeProgressSummaryDTO>> getUserBadgeProgress(@PathVariable UUID userId) {
         List<BadgeProgressSummaryDTO> progress = badgeService.getUserBadgeProgress(userId);
         return ResponseEntity.ok(progress);
@@ -51,7 +51,7 @@ public class BadgeController {
     }
 
     @PostMapping("/{userId}/evaluate")
-    @PreAuthorize("isAuthenticated()")
+    @PreAuthorize("#userId.equals(authentication.principal.id) or hasRole('ADMIN')")
     public ResponseEntity<Void> evaluateUserBadges(@PathVariable UUID userId) {
         badgeService.evaluateAllBadges(userId);
         return ResponseEntity.ok().build();

@@ -39,22 +39,23 @@ public class DoctorService {
 
     public List<DoctorDTO> getAllDoctors() {
         List<User> doctors = userRepository.findDoctorsByStatus("ACTIVE");
-        return doctors.stream()
-                .map(doctorMapper::toDTO)
-                .collect(Collectors.toList());
+        // BBUG-L4: batch mapping avoids one badge query per doctor.
+        return doctorMapper.toDTOList(doctors);
     }
 
     public List<DoctorDTO> getDoctorsBySpecialty(String specialty) {
         List<User> doctors = userRepository.findDoctorsByStatusAndSpecialty("ACTIVE", specialty);
-        return doctors.stream()
-                .map(doctorMapper::toDTO)
-                .collect(Collectors.toList());
+        // BBUG-L4: batch mapping avoids one badge query per doctor.
+        return doctorMapper.toDTOList(doctors);
     }
 
     public List<String> getAllSpecialties() {
         List<User> doctors = userRepository.findDoctorsByStatus("ACTIVE");
         return doctors.stream()
-                .map(user -> user.getDoctorProfile().getSpecialty())
+                .map(User::getDoctorProfile)
+                .filter(java.util.Objects::nonNull)
+                .map(com.medibook.api.entity.DoctorProfile::getSpecialty)
+                .filter(java.util.Objects::nonNull)
                 .distinct()
                 .sorted()
                 .collect(Collectors.toList());

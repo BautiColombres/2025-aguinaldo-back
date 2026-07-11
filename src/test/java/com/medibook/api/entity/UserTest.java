@@ -51,6 +51,29 @@ class UserTest {
     }
 
     @Test
+    void setDoctorProfile_associatesBidirectionally_withoutForcingId() {
+        // BBUG-M5: the setter must not force the profile id to the (possibly null) user id.
+        // The id is derived at persist time via @MapsId. The setter's only job is to wire
+        // both sides of the association.
+        User user = new User();
+        user.setEmail("doc@example.com");
+        user.setName("Doc");
+        user.setSurname("Tor");
+        // Intentionally no id set yet.
+
+        DoctorProfile profile = new DoctorProfile();
+        profile.setMedicalLicense("ML-1");
+        profile.setSpecialty("Cardiology");
+
+        user.setDoctorProfile(profile);
+
+        assertSame(profile, user.getDoctorProfile());
+        assertSame(user, profile.getUser());
+        // Id is NOT forced by the setter (remains null until @MapsId runs at persist).
+        assertNull(profile.getId());
+    }
+
+    @Test
     void whenNoOptionalFields_thenNullValues() {
         User user = new User();
         user.setEmail("test@example.com");

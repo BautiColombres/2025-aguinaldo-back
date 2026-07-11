@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+          http://www.liquibase.org/xml/ns/dbchangelog
+          https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
+
+    <!--
+      PHI ACCESS AUDIT LOG (P1 — Batch 4)
+
+      Append-only / immutable audit trail of every medical-history and
+      patient-file READ and WRITE (allow AND deny). Rows are only ever
+      INSERTed by the application; there is intentionally no application code
+      path that UPDATEs or DELETEs rows here. Stores identifiers, enums and
+      request metadata ONLY — NO PHI content (no chart text / file contents).
+    -->
+    <changeSet id="0012-01-audit-log" author="MediBook_Security">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="audit_log"/>
+            </not>
+        </preConditions>
+
+        <comment>Append-only audit log of PHI access (IDs only, no PHI content)</comment>
+
+        <createTable tableName="audit_log">
+            <column name="id" type="uuid" defaultValueComputed="uuid_generate_v4()">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="actor_user_id" type="uuid">
+                <constraints nullable="true"/>
+            </column>
+            <column name="actor_role" type="text">
+                <constraints nullable="true"/>
+            </column>
+            <column name="subject_patient_id" type="uuid">
+                <constraints nullable="true"/>
+            </column>
+            <column name="action" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="resource_type" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="resource_id" type="text">
+                <constraints nullable="true"/>
+            </column>
+            <column name="outcome" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="occurred_at" type="timestamptz" defaultValueComputed="now()">
+                <constraints nullable="false"/>
+            </column>
+            <column name="source_ip" type="text">
+                <constraints nullable="true"/>
+            </column>
+            <column name="request_id" type="text">
+                <constraints nullable="true"/>
+            </column>
+        </createTable>
+
+        <createIndex indexName="idx_audit_log_subject_patient" tableName="audit_log">
+            <column name="subject_patient_id"/>
+        </createIndex>
+
+        <createIndex indexName="idx_audit_log_occurred_at" tableName="audit_log">
+            <column name="occurred_at"/>
+        </createIndex>
+
+        <createIndex indexName="idx_audit_log_actor" tableName="audit_log">
+            <column name="actor_user_id"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

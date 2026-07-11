@@ -10,7 +10,15 @@ import com.medibook.api.service.TurnFileService;
 import org.springframework.stereotype.Component;
 import lombok.RequiredArgsConstructor;
 
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Component
 @RequiredArgsConstructor
@@ -29,26 +37,68 @@ public class TurnAssignedMapper {
     }
 
     public TurnResponseDTO toDTO(TurnAssigned turn) {
-        boolean isCompleted = "COMPLETED".equals(turn.getStatus());
-        
-        boolean needsPatientRating = false;
-        boolean needsDoctorRating = false;
-        
-        if (turn.getPatient() != null && turn.getDoctor() != null) {
-            
-            if (isCompleted) {
-                needsPatientRating = !ratingRepository.existsByTurnAssigned_IdAndRater_Id(
-                    turn.getId(), turn.getPatient().getId());
+        Set<UUID> raterIds = Collections.emptySet();
+        if (turn.getPatient() != null && turn.getDoctor() != null && "COMPLETED".equals(turn.getStatus())) {
+            raterIds = new HashSet<>();
+            if (ratingRepository.existsByTurnAssigned_IdAndRater_Id(turn.getId(), turn.getPatient().getId())) {
+                raterIds.add(turn.getPatient().getId());
             }
-            
-            if (isCompleted) {
-                needsDoctorRating = !ratingRepository.existsByTurnAssigned_IdAndRater_Id(
-                    turn.getId(), turn.getDoctor().getId());
+            if (ratingRepository.existsByTurnAssigned_IdAndRater_Id(turn.getId(), turn.getDoctor().getId())) {
+                raterIds.add(turn.getDoctor().getId());
             }
         }
-        
-        Optional<TurnFile> turnFile = turnFileService.getTurnFileInfo(turn.getId());
-        
+        TurnFile turnFile = turnFileService.getTurnFileInfo(turn.getId()).orElse(null);
+        return buildDTO(turn, raterIds, turnFile);
+    }
+
+    /**
+     * BBUG-L4: batch mapping — resolves the "already rated" flags and attached files for ALL
+     * given turns with TWO queries total (one for ratings, one for files) instead of up to
+     * three per row. The single-row {@link #toDTO(TurnAssigned)} API is unchanged.
+     */
+    public List<TurnResponseDTO> toDTOList(List<TurnAssigned> turns) {
+        if (turns == null || turns.isEmpty()) {
+            return List.of();
+        }
+
+        Set<UUID> turnIds = turns.stream()
+                .map(TurnAssigned::getId)
+                .collect(Collectors.toSet());
+
+        Map<UUID, Set<UUID>> ratersByTurn = new HashMap<>();
+        for (Object[] row : ratingRepository.findTurnAndRaterIdsByTurnIds(turnIds)) {
+            UUID turnId = (UUID) row[0];
+            UUID raterId = (UUID) row[1];
+            ratersByTurn.computeIfAbsent(turnId, k -> new HashSet<>()).add(raterId);
+        }
+
+        Map<UUID, TurnFile> filesByTurn = turnFileService.getTurnFileInfoBatch(turnIds);
+        if (filesByTurn == null) {
+            filesByTurn = Collections.emptyMap();
+        }
+        final Map<UUID, TurnFile> filesByTurnFinal = filesByTurn;
+
+        return turns.stream()
+                .map(turn -> buildDTO(
+                        turn,
+                        ratersByTurn.getOrDefault(turn.getId(), Collections.emptySet()),
+                        filesByTurnFinal.get(turn.getId())))
+                .collect(Collectors.toList());
+    }
+
+    private TurnResponseDTO buildDTO(TurnAssigned turn, Set<UUID> raterIds, TurnFile file) {
+        boolean isCompleted = "COMPLETED".equals(turn.getStatus());
+
+        boolean needsPatientRating = false;
+        boolean needsDoctorRating = false;
+
+        if (turn.getPatient() != null && turn.getDoctor() != null && isCompleted) {
+            needsPatientRating = !raterIds.contains(turn.getPatient().getId());
+            needsDoctorRating = !raterIds.contains(turn.getDoctor().getId());
+        }
+
+        Optional<TurnFile> turnFile = Optional.ofNullable(file);
+
         return TurnResponseDTO.builder()
                 .id(turn.getId())
                 .doctorId(turn.getDoctor().getId())

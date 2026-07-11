@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -20,15 +21,23 @@ public class MedicalHistoryController {
     private final MedicalHistoryService medicalHistoryService;
 
     @GetMapping("/patient/{patientId}")
-    @PreAuthorize("hasRole('PATIENT') and authentication.principal.id.equals(#patientId) or hasRole('DOCTOR') or hasRole('ADMIN')")
-    public ResponseEntity<List<MedicalHistoryDTO>> getPatientMedicalHistory(@PathVariable UUID patientId) {
-        List<MedicalHistoryDTO> histories = medicalHistoryService.getPatientMedicalHistory(patientId);
+    @PreAuthorize("@medAuthz.canRead(authentication, #patientId)")
+    public ResponseEntity<List<MedicalHistoryDTO>> getPatientMedicalHistory(
+            @PathVariable UUID patientId,
+            Authentication authentication) {
+        // Service-layer enforcement as defense in depth (mirrors @PreAuthorize above).
+        List<MedicalHistoryDTO> histories =
+                medicalHistoryService.getPatientMedicalHistoryAuthorized(authentication, patientId);
         return ResponseEntity.ok(histories);
     }
 
     @GetMapping("/{historyId}")
-    @PreAuthorize("hasRole('DOCTOR') or hasRole('ADMIN')")
-    public ResponseEntity<MedicalHistoryDTO> getMedicalHistoryById(@PathVariable UUID historyId) {
-        return ResponseEntity.notFound().build();
+    public ResponseEntity<MedicalHistoryDTO> getMedicalHistoryById(
+            @PathVariable UUID historyId,
+            Authentication authentication) {
+        // Cannot resolve the patient relationship in SpEL before loading the entry,
+        // so authorization is enforced inside the service (same @medAuthz read rules).
+        MedicalHistoryDTO history = medicalHistoryService.getMedicalHistoryById(authentication, historyId);
+        return ResponseEntity.ok(history);
     }
 }

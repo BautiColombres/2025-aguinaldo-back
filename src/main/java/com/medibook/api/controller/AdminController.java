@@ -15,6 +15,7 @@ import com.medibook.api.repository.UserRepository;
 import com.medibook.api.service.EmailService;
 import com.medibook.api.util.AuthorizationUtil;
 import com.medibook.api.util.ErrorResponseUtil;
+import com.medibook.api.util.LogMaskingUtil;
 import com.medibook.api.util.UserValidationUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
@@ -26,6 +27,14 @@ import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * BSEC-M-5: this controller intentionally reads the authenticated principal via
+ * {@code request.getAttribute("authenticatedUser")}. That attribute is set by
+ * {@code TokenAuthenticationFilter} to the SAME {@code User} as the standard
+ * SecurityContext principal, so it is equivalent and secure (see the filter's comment).
+ * It is kept on the legacy mechanism deliberately (existing tests mock the request
+ * attribute); do NOT treat this as a second, divergent authorization source.
+ */
 @RestController
 @RequestMapping("/api/admin")
 @Slf4j
@@ -96,13 +105,13 @@ public class AdminController {
                 emailService.sendApprovalEmailToDoctorAsync(doctorEmail, doctorName)
                     .thenAccept(response -> {
                         if (response.isSuccess()) {
-                            log.info("Email de aprobación enviado al doctor: {}", doctorEmail);
+                            log.info("Email de aprobación enviado al doctor: {}", LogMaskingUtil.maskEmail(doctorEmail));
                         } else {
-                            log.warn("Falló email de aprobación al doctor {}: {}", doctorEmail, response.getMessage());
+                            log.warn("Falló email de aprobación al doctor {}: {}", LogMaskingUtil.maskEmail(doctorEmail), response.getMessage());
                         }
                     });
-                
-                log.info("Email de aprobación encolado para doctor: {}", doctorEmail);
+
+                log.info("Email de aprobación encolado para doctor: {}", LogMaskingUtil.maskEmail(doctorEmail));
             } catch (Exception e) {
                 log.warn("Error encolando email de aprobación al doctor: {}", e.getMessage());
             }
@@ -157,13 +166,13 @@ public class AdminController {
                 emailService.sendRejectionEmailToDoctorAsync(doctorEmail, doctorName, rejectionReason)
                     .thenAccept(response -> {
                         if (response.isSuccess()) {
-                            log.info(" Email de rechazo enviado al doctor: {}", doctorEmail);
+                            log.info("Email de rechazo enviado al doctor: {}", LogMaskingUtil.maskEmail(doctorEmail));
                         } else {
-                            log.warn("Falló email de rechazo al doctor {}: {}", doctorEmail, response.getMessage());
+                            log.warn("Falló email de rechazo al doctor {}: {}", LogMaskingUtil.maskEmail(doctorEmail), response.getMessage());
                         }
                     });
-                
-                log.info("Email de rechazo encolado para doctor: {}", doctorEmail);
+
+                log.info("Email de rechazo encolado para doctor: {}", LogMaskingUtil.maskEmail(doctorEmail));
             } catch (Exception e) {
                 log.warn("Error encolando email de rechazo al doctor: {}", e.getMessage());
             }

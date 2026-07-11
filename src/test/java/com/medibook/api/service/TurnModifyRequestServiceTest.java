@@ -6,6 +6,7 @@ import com.medibook.api.dto.Turn.TurnModifyRequestResponseDTO;
 import com.medibook.api.entity.TurnAssigned;
 import com.medibook.api.entity.TurnModifyRequest;
 import com.medibook.api.entity.User;
+import com.medibook.api.exception.SlotUnavailableException;
 import com.medibook.api.mapper.TurnModifyRequestMapper;
 import com.medibook.api.repository.TurnAssignedRepository;
 import com.medibook.api.repository.TurnModifyRequestRepository;
@@ -261,6 +262,47 @@ class TurnModifyRequestServiceTest {
                 any(String.class),
                 any(String.class)
         );
+    }
+
+    @Test
+    void approveModifyRequest_TargetSlotFree_ShouldApprove() {
+        modifyRequest.setStatus("PENDING");
+        when(turnModifyRequestRepository.findById(modifyRequest.getId())).thenReturn(Optional.of(modifyRequest));
+        when(turnAssignedRepository.existsConflictingTurnExcludingId(
+                doctor.getId(), modifyRequest.getRequestedScheduledAt(), turnAssigned.getId()))
+                .thenReturn(false);
+        when(turnAssignedRepository.save(any(TurnAssigned.class))).thenReturn(turnAssigned);
+        when(turnModifyRequestRepository.save(any(TurnModifyRequest.class))).thenAnswer(invocation -> {
+            TurnModifyRequest req = invocation.getArgument(0);
+            req.setStatus("APPROVED");
+            return req;
+        });
+        when(mapper.toResponseDTO(any(TurnModifyRequest.class))).thenReturn(responseDTO);
+
+        TurnModifyRequestResponseDTO result = service.approveModifyRequest(modifyRequest.getId(), doctor);
+
+        assertNotNull(result);
+        assertEquals("APPROVED", modifyRequest.getStatus());
+        verify(turnAssignedRepository).existsConflictingTurnExcludingId(
+                doctor.getId(), modifyRequest.getRequestedScheduledAt(), turnAssigned.getId());
+        verify(turnAssignedRepository).save(turnAssigned);
+    }
+
+    @Test
+    void approveModifyRequest_TargetSlotAlreadyBooked_ShouldThrowConflictAndNotDoubleBook() {
+        modifyRequest.setStatus("PENDING");
+        when(turnModifyRequestRepository.findById(modifyRequest.getId())).thenReturn(Optional.of(modifyRequest));
+        when(turnAssignedRepository.existsConflictingTurnExcludingId(
+                doctor.getId(), modifyRequest.getRequestedScheduledAt(), turnAssigned.getId()))
+                .thenReturn(true);
+
+        assertThrows(SlotUnavailableException.class,
+                () -> service.approveModifyRequest(modifyRequest.getId(), doctor));
+
+        // No double-book: neither the turn nor the request are persisted
+        verify(turnAssignedRepository, never()).save(any(TurnAssigned.class));
+        verify(turnModifyRequestRepository, never()).save(any(TurnModifyRequest.class));
+        assertEquals("PENDING", modifyRequest.getStatus());
     }
 
     @Test

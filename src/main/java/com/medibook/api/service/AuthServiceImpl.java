@@ -4,6 +4,7 @@ import com.medibook.api.dto.Auth.RegisterRequestDTO;
 import com.medibook.api.dto.Auth.RegisterResponseDTO;
 import com.medibook.api.dto.Auth.SignInRequestDTO;
 import com.medibook.api.dto.Auth.SignInResponseDTO;
+import com.medibook.api.dto.Auth.SignInResultDTO;
 import com.medibook.api.entity.EmailVerification;
 import com.medibook.api.entity.RefreshToken;
 import com.medibook.api.entity.User;
@@ -12,14 +13,18 @@ import com.medibook.api.mapper.UserMapper;
 import com.medibook.api.repository.EmailVerificationRepository;
 import com.medibook.api.repository.RefreshTokenRepository;
 import com.medibook.api.repository.UserRepository;
+import com.medibook.api.util.LogMaskingUtil;
 
 import static com.medibook.api.util.DateTimeUtils.ARGENTINA_ZONE;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import lombok.extern.slf4j.Slf4j;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import java.security.SecureRandom;
 import java.security.MessageDigest;
 
@@ -27,6 +32,7 @@ import java.time.LocalDate;
 import java.time.ZonedDateTime;
 import java.util.Base64;
 import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 import java.util.UUID;
 
 
@@ -41,6 +47,10 @@ class AuthServiceImpl implements AuthService {
     private final EmailService emailService;
     private final EmailVerificationRepository emailVerificationRepository;
     private final JwtService jwtService;
+
+    // BSEC-L-2: server-side key used to HMAC refresh tokens before persisting them.
+    private final String refreshTokenHmacKey;
+    private static final String HMAC_ALGORITHM = "HmacSHA256";
 
     private static final java.util.Set<String> VALID_SPECIALTIES = java.util.Set.of(
         "ALERGIA E INMUNOLOGÍA",
@@ -115,7 +125,8 @@ class AuthServiceImpl implements AuthService {
             AuthMapper authMapper,
             EmailService emailService,
             EmailVerificationRepository emailVerificationRepository,
-            JwtService jwtService) {
+            JwtService jwtService,
+            @Value("${app.refresh-token.hmac-key:${jwt.secret}}") String refreshTokenHmacKey) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.passwordEncoder = passwordEncoder;
@@ -124,6 +135,7 @@ class AuthServiceImpl implements AuthService {
         this.emailService = emailService;
         this.emailVerificationRepository = emailVerificationRepository;
         this.jwtService = jwtService;
+        this.refreshTokenHmacKey = refreshTokenHmacKey;
     }
 
     @Override
@@ -155,14 +167,14 @@ class AuthServiceImpl implements AuthService {
                 final String userName = user.getName();
 
                 emailService.sendWelcomeEmailToPatientAsync(userEmail, userName);
-                log.info("Email de bienvenida enviado a: {}", userEmail);                
-                
+                log.info("Email de bienvenida enviado a: {}", LogMaskingUtil.maskEmail(userEmail));
+
             } catch (Exception e) {
-                log.warn("Error enviando email de bienvenida a {}: {}", user.getEmail(), e.getMessage());            
+                log.warn("Error enviando email de bienvenida a {}: {}", LogMaskingUtil.maskEmail(user.getEmail()), e.getMessage());
             }
         }
-        
-        log.info("Cuenta verificada exitosamente para: {}", user.getEmail());
+
+        log.info("Cuenta verificada exitosamente para: {}", LogMaskingUtil.maskEmail(user.getEmail()));
     }
 
     @Override
@@ -192,9 +204,9 @@ class AuthServiceImpl implements AuthService {
             
             emailService.sendVerificationEmailAsync(userEmail, userName, verificationToken);                
             
-            log.info("Email de verificación enviado a: {}", userEmail);
+            log.info("Email de verificación enviado a: {}", LogMaskingUtil.maskEmail(userEmail));
         } catch (Exception e) {
-            log.warn("Error enviando email de verificación a {}: {}", user.getEmail(), e.getMessage());            
+            log.warn("Error enviando email de verificación a {}: {}", LogMaskingUtil.maskEmail(user.getEmail()), e.getMessage());
         }
 
         return userMapper.toRegisterResponse(user);
@@ -229,9 +241,9 @@ class AuthServiceImpl implements AuthService {
             
             emailService.sendVerificationEmailAsync(userEmail, userName, verificationToken);                
             
-            log.info("Email de verificación enviado a: {}", userEmail);
+            log.info("Email de verificación enviado a: {}", LogMaskingUtil.maskEmail(userEmail));
         } catch (Exception e) {
-            log.warn("Error enviando email de verificación a {}: {}", user.getEmail(), e.getMessage());            
+            log.warn("Error enviando email de verificación a {}: {}", LogMaskingUtil.maskEmail(user.getEmail()), e.getMessage());
         }
 
         return userMapper.toRegisterResponse(user);
@@ -257,7 +269,7 @@ class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
-    public SignInResponseDTO signIn(SignInRequestDTO request) {
+    public SignInResultDTO signIn(SignInRequestDTO request) {
         User user = userRepository.findByEmail(request.email())
                 .orElseThrow(() -> new IllegalArgumentException("Correo o contraseña incorrecto"));
 
@@ -274,14 +286,16 @@ class AuthServiceImpl implements AuthService {
         }
 
         String rawToken = generateSecureToken();
-        String hashedToken = hashToken(rawToken);
+        String hashedToken = hmacToken(rawToken);
 
         RefreshToken refreshToken = createRefreshToken(user, hashedToken);
         refreshTokenRepository.save(refreshToken);
 
         String accessToken = generateAccessToken(user);
 
-        return authMapper.toSignInResponse(user, accessToken, rawToken);
+        // FSEC-H1 Stage 3: the raw refresh token is returned separately (for the httpOnly
+        // cookie), NEVER inside the SignInResponseDTO body.
+        return new SignInResultDTO(authMapper.toSignInResponse(user, accessToken), rawToken);
     }
 
     private boolean isUserAuthorizedToSignIn(User user) {
@@ -301,19 +315,50 @@ class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
-    public void signOut(String rawRefreshToken) {
-        if (rawRefreshToken == null) {
+    public void signOut(String rawRefreshToken, UUID callerId) {
+        // BBUG-L2: a missing token is a logged no-op (do NOT silently swallow it).
+        if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
+            log.warn("Sign-out requested with no refresh token; nothing to revoke");
             return;
         }
-        String hashedToken = hashToken(rawRefreshToken);
-        refreshTokenRepository.revokeTokenByHash(hashedToken, ZonedDateTime.now(ARGENTINA_ZONE));
+
+        String hashedToken = hmacToken(rawRefreshToken);
+        Optional<RefreshToken> tokenOpt = refreshTokenRepository.findByTokenHash(hashedToken);
+
+        // BBUG-L2: no matching row -> logged no-op (token never issued, already deleted, or invalid).
+        if (tokenOpt.isEmpty()) {
+            log.warn("Sign-out: no refresh token matched the presented credential; nothing to revoke");
+            return;
+        }
+
+        RefreshToken token = tokenOpt.get();
+
+        // BBUG-L2: ownership check — a caller must not be able to revoke another user's token.
+        UUID ownerId = token.getUser() != null ? token.getUser().getId() : null;
+        if (callerId != null && ownerId != null && !callerId.equals(ownerId)) {
+            log.warn("Sign-out: caller {} attempted to revoke a refresh token owned by user {}; ignored",
+                    LogMaskingUtil.maskId(callerId), LogMaskingUtil.maskId(ownerId));
+            return;
+        }
+
+        if (token.isRevoked()) {
+            log.warn("Sign-out: refresh token for user {} was already revoked; nothing to do",
+                    LogMaskingUtil.maskId(ownerId));
+            return;
+        }
+
+        int revoked = refreshTokenRepository.revokeTokenByHash(hashedToken, ZonedDateTime.now(ARGENTINA_ZONE));
+        if (revoked == 0) {
+            log.warn("Sign-out: expected to revoke a refresh token for user {} but no row was updated",
+                    LogMaskingUtil.maskId(ownerId));
+        }
     }
 
     @Override
     @Transactional
-    public SignInResponseDTO refreshToken(String rawRefreshToken) {
+    public SignInResultDTO refreshToken(String rawRefreshToken) {
         
-        String hashedInputToken = hashToken(rawRefreshToken);
+        String hashedInputToken = hmacToken(rawRefreshToken);
 
         RefreshToken refreshToken = refreshTokenRepository.findByTokenHash(hashedInputToken)
                 .orElseThrow(() -> new IllegalArgumentException("Invalid refresh token"));
@@ -326,14 +371,15 @@ class AuthServiceImpl implements AuthService {
         String newAccessToken = generateAccessToken(user);
 
         String newRawToken = generateSecureToken();
-        String newHashedToken = hashToken(newRawToken);
+        String newHashedToken = hmacToken(newRawToken);
 
         RefreshToken newRefreshToken = createRefreshToken(user, newHashedToken);
         refreshTokenRepository.save(newRefreshToken);
         
         refreshTokenRepository.revokeTokenByHash(hashedInputToken, ZonedDateTime.now(ARGENTINA_ZONE));
 
-        return authMapper.toSignInResponse(user, newAccessToken, newRawToken);
+        // FSEC-H1 Stage 3: rotated raw refresh token travels via the cookie only.
+        return new SignInResultDTO(authMapper.toSignInResponse(user, newAccessToken), newRawToken);
     }
 
     private RefreshToken createRefreshToken(User user, String hashedToken) {
@@ -421,6 +467,22 @@ class AuthServiceImpl implements AuthService {
             return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
         } catch (java.security.NoSuchAlgorithmException e) {
             throw new RuntimeException("Error initializing SHA-256", e);
+        }
+    }
+
+    /**
+     * BSEC-L-2: keyed HMAC-SHA256 of a refresh token. Unlike a bare SHA-256, an attacker who
+     * leaks the token_hash column cannot precompute/reverse tokens without the server-side
+     * key. The raw and hashed tokens are never logged. Deterministic for a given (key, token).
+     */
+    private String hmacToken(String token) {
+        try {
+            Mac mac = Mac.getInstance(HMAC_ALGORITHM);
+            mac.init(new SecretKeySpec(refreshTokenHmacKey.getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM));
+            byte[] hash = mac.doFinal(token.getBytes(StandardCharsets.UTF_8));
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
+        } catch (java.security.NoSuchAlgorithmException | java.security.InvalidKeyException e) {
+            throw new RuntimeException("Error initializing HMAC for refresh token", e);
         }
     }
 

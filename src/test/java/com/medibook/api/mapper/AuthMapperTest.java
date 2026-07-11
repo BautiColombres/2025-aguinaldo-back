@@ -18,7 +18,7 @@ class AuthMapperTest {
     private AuthMapper authMapper;
 
     @Test
-    void toSignInResponse_WithTokens_ShouldMapCorrectly() {
+    void toSignInResponse_WithAccessToken_ShouldMapCorrectly() {
         UUID userId = UUID.randomUUID();
         User user = new User();
         user.setId(userId);
@@ -27,11 +27,11 @@ class AuthMapperTest {
         user.setSurname("Doe");
         user.setRole("PATIENT");
         user.setStatus("ACTIVE");
-        
-        String accessToken = "access-token-123";
-        String refreshToken = "refresh-token-456";
 
-        SignInResponseDTO result = authMapper.toSignInResponse(user, accessToken, refreshToken);
+        String accessToken = "access-token-123";
+
+        // FSEC-H1 Stage 3: the DTO no longer carries a refresh token.
+        SignInResponseDTO result = authMapper.toSignInResponse(user, accessToken);
 
         assertThat(result).isNotNull();
         assertThat(result.id()).isEqualTo(userId);
@@ -40,7 +40,6 @@ class AuthMapperTest {
         assertThat(result.surname()).isEqualTo("Doe");
         assertThat(result.role()).isEqualTo("PATIENT");
         assertThat(result.accessToken()).isEqualTo(accessToken);
-        assertThat(result.refreshToken()).isEqualTo(refreshToken);
     }
 
     @Test
@@ -63,6 +62,5 @@ class AuthMapperTest {
         assertThat(result.surname()).isEqualTo("Smith");
         assertThat(result.role()).isEqualTo("DOCTOR");
         assertThat(result.accessToken()).isNull();
-        assertThat(result.refreshToken()).isNull();
     }
 }

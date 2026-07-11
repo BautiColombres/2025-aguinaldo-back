@@ -59,6 +59,9 @@ class TurnAssignedServiceTest {
     @Mock
     private com.medibook.api.service.BadgeEvaluationTriggerService badgeEvaluationTrigger;
 
+    @Mock
+    private com.medibook.api.service.MedicalCheckApiService medicalCheckApiService;
+
     @InjectMocks
     private TurnAssignedService turnAssignedService;
 
@@ -142,6 +145,14 @@ class TurnAssignedServiceTest {
                 .scheduledAt(scheduledAt)
                 .status("SCHEDULED")
                 .build();
+
+        // In production the @Lazy self-reference is a transactional proxy; in unit
+        // tests we point it at the real instance so the DB portion runs for real
+        // (with mocked repos) while the external call stays outside that method.
+        org.springframework.test.util.ReflectionTestUtils.setField(turnAssignedService, "self", turnAssignedService);
+
+        patient.setEmail("patient@example.com");
+        doctor.setEmail("doctor@example.com");
     }
 
     @Test
@@ -173,6 +184,41 @@ class TurnAssignedServiceTest {
                 anyString(), 
                 anyString()
         );
+    }
+
+    @Test
+    void createTurn_TurnPersistenceFails_PropagatesException() {
+        // BBUG-M6: turn persistence is a must-succeed operation. A DB failure while
+        // saving the turn must propagate, not be swallowed.
+        when(userRepo.findById(doctorId)).thenReturn(Optional.of(doctor));
+        when(userRepo.findById(patientId)).thenReturn(Optional.of(patient));
+        when(turnRepo.existsByDoctor_IdAndScheduledAtAndStatusNotCancelled(doctorId, scheduledAt)).thenReturn(false);
+        when(turnRepo.save(any(TurnAssigned.class))).thenThrow(new RuntimeException("DB write failed"));
+
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> turnAssignedService.createTurn(createRequest));
+
+        assertEquals("DB write failed", ex.getMessage());
+        verify(turnRepo).save(any(TurnAssigned.class));
+    }
+
+    @Test
+    void createTurn_NotificationFails_TurnStillCreated() {
+        // BBUG-M6: the doctor notification is a best-effort side effect. A failure there
+        // must NOT fail turn creation.
+        when(userRepo.findById(doctorId)).thenReturn(Optional.of(doctor));
+        when(userRepo.findById(patientId)).thenReturn(Optional.of(patient));
+        when(turnRepo.existsByDoctor_IdAndScheduledAtAndStatusNotCancelled(doctorId, scheduledAt)).thenReturn(false);
+        when(turnRepo.save(any(TurnAssigned.class))).thenReturn(turnEntity);
+        when(mapper.toDTO(turnEntity)).thenReturn(turnResponse);
+        doThrow(new RuntimeException("notification broker down"))
+                .when(notificationService).createTurnReservedNotification(any(), any(), anyString(), anyString(), anyString());
+
+        TurnResponseDTO result = assertDoesNotThrow(() -> turnAssignedService.createTurn(createRequest));
+
+        assertNotNull(result);
+        assertEquals(turnId, result.getId());
+        verify(turnRepo).save(any(TurnAssigned.class));
     }
 
     @Test
@@ -289,99 +335,6 @@ class TurnAssignedServiceTest {
         verify(turnRepo, never()).save(any());
     }
 
-    @Test
-    void reserveTurn_Success() {
-        TurnAssigned availableTurn = TurnAssigned.builder()
-                .id(turnId)
-                .doctor(doctor)
-                .patient(null)
-                .scheduledAt(scheduledAt)
-                .status("AVAILABLE")
-                .build();
-
-        TurnAssigned reservedTurn = TurnAssigned.builder()
-                .id(turnId)
-                .doctor(doctor)
-                .patient(patient)
-                .scheduledAt(scheduledAt)
-                .status("RESERVED")
-                .build();
-
-        when(turnRepo.findById(turnId)).thenReturn(Optional.of(availableTurn));
-        when(userRepo.findById(patientId)).thenReturn(Optional.of(patient));
-        when(turnRepo.save(any(TurnAssigned.class))).thenReturn(reservedTurn);
-
-        TurnAssigned result = turnAssignedService.reserveTurn(turnId, patientId);
-
-        assertNotNull(result);
-        assertEquals(turnId, result.getId());
-        assertEquals(patient, result.getPatient());
-        assertEquals("RESERVED", result.getStatus());
-
-        verify(turnRepo).findById(turnId);
-        verify(userRepo).findById(patientId);
-        verify(turnRepo).save(any(TurnAssigned.class));
-    }
-
-    @Test
-    void reserveTurn_TurnNotFound_ThrowsException() {
-        when(turnRepo.findById(turnId)).thenReturn(Optional.empty());
-
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
-            turnAssignedService.reserveTurn(turnId, patientId);
-        });
-
-        assertEquals("Turn not found", exception.getMessage());
-        verify(turnRepo).findById(turnId);
-        verify(userRepo, never()).findById(any());
-        verify(turnRepo, never()).save(any());
-    }
-
-    @Test
-    void reserveTurn_TurnNotAvailable_ThrowsException() {
-        TurnAssigned scheduledTurn = TurnAssigned.builder()
-                .id(turnId)
-                .doctor(doctor)
-                .patient(patient)
-                .scheduledAt(scheduledAt)
-                .status("SCHEDULED")
-                .build();
-
-        when(turnRepo.findById(turnId)).thenReturn(Optional.of(scheduledTurn));
-
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
-            turnAssignedService.reserveTurn(turnId, patientId);
-        });
-
-        assertEquals("Turn is not available", exception.getMessage());
-        verify(turnRepo).findById(turnId);
-        verify(userRepo, never()).findById(any());
-        verify(turnRepo, never()).save(any());
-    }
-
-    @Test
-    void reserveTurn_PatientNotFound_ThrowsException() {
-        TurnAssigned availableTurn = TurnAssigned.builder()
-                .id(turnId)
-                .doctor(doctor)
-                .patient(null)
-                .scheduledAt(scheduledAt)
-                .status("AVAILABLE")
-                .build();
-
-        when(turnRepo.findById(turnId)).thenReturn(Optional.of(availableTurn));
-        when(userRepo.findById(patientId)).thenReturn(Optional.empty());
-
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
-            turnAssignedService.reserveTurn(turnId, patientId);
-        });
-
-        assertEquals("Patient not found", exception.getMessage());
-        verify(turnRepo).findById(turnId);
-        verify(userRepo).findById(patientId);
-        verify(turnRepo, never()).save(any());
-    }
-    
     @Test
     void cancelTurn_Success() {
         TurnAssigned scheduledTurn = TurnAssigned.builder()
@@ -648,7 +601,7 @@ class TurnAssignedServiceTest {
         List<TurnResponseDTO> expectedResponse = Arrays.asList(turnResponse);
 
         when(turnRepo.findByDoctor_IdOrderByScheduledAtDesc(doctorId)).thenReturn(turns);
-        when(mapper.toDTO(turnEntity)).thenReturn(turnResponse);
+        when(mapper.toDTOList(turns)).thenReturn(expectedResponse);
 
         List<TurnResponseDTO> result = turnAssignedService.getTurnsByDoctor(doctorId);
 
@@ -656,7 +609,7 @@ class TurnAssignedServiceTest {
         assertEquals(1, result.size());
         assertEquals(expectedResponse.get(0).getId(), result.get(0).getId());
         verify(turnRepo).findByDoctor_IdOrderByScheduledAtDesc(doctorId);
-        verify(mapper).toDTO(turnEntity);
+        verify(mapper).toDTOList(turns);
     }
 
     @Test
@@ -665,7 +618,7 @@ class TurnAssignedServiceTest {
         List<TurnResponseDTO> expectedResponse = Arrays.asList(turnResponse);
 
         when(turnRepo.findByPatient_IdOrderByScheduledAtDesc(patientId)).thenReturn(turns);
-        when(mapper.toDTO(turnEntity)).thenReturn(turnResponse);
+        when(mapper.toDTOList(turns)).thenReturn(expectedResponse);
 
         List<TurnResponseDTO> result = turnAssignedService.getTurnsByPatient(patientId);
 
@@ -673,7 +626,7 @@ class TurnAssignedServiceTest {
         assertEquals(1, result.size());
         assertEquals(expectedResponse.get(0).getId(), result.get(0).getId());
         verify(turnRepo).findByPatient_IdOrderByScheduledAtDesc(patientId);
-        verify(mapper).toDTO(turnEntity);
+        verify(mapper).toDTOList(turns);
     }
 
     @Test
@@ -683,7 +636,7 @@ class TurnAssignedServiceTest {
         List<TurnResponseDTO> expectedResponse = Arrays.asList(turnResponse);
 
         when(turnRepo.findByDoctor_IdAndStatusOrderByScheduledAtDesc(doctorId, status)).thenReturn(turns);
-        when(mapper.toDTO(turnEntity)).thenReturn(turnResponse);
+        when(mapper.toDTOList(turns)).thenReturn(expectedResponse);
 
         List<TurnResponseDTO> result = turnAssignedService.getTurnsByDoctorAndStatus(doctorId, status);
 
@@ -691,7 +644,7 @@ class TurnAssignedServiceTest {
         assertEquals(1, result.size());
         assertEquals(expectedResponse.get(0).getId(), result.get(0).getId());
         verify(turnRepo).findByDoctor_IdAndStatusOrderByScheduledAtDesc(doctorId, status);
-        verify(mapper).toDTO(turnEntity);
+        verify(mapper).toDTOList(turns);
     }
 
     @Test
@@ -701,7 +654,7 @@ class TurnAssignedServiceTest {
         List<TurnResponseDTO> expectedResponse = Arrays.asList(turnResponse);
 
         when(turnRepo.findByPatient_IdAndStatusOrderByScheduledAtDesc(patientId, status)).thenReturn(turns);
-        when(mapper.toDTO(turnEntity)).thenReturn(turnResponse);
+        when(mapper.toDTOList(turns)).thenReturn(expectedResponse);
 
         List<TurnResponseDTO> result = turnAssignedService.getTurnsByPatientAndStatus(patientId, status);
 
@@ -709,7 +662,7 @@ class TurnAssignedServiceTest {
         assertEquals(1, result.size());
         assertEquals(expectedResponse.get(0).getId(), result.get(0).getId());
         verify(turnRepo).findByPatient_IdAndStatusOrderByScheduledAtDesc(patientId, status);
-        verify(mapper).toDTO(turnEntity);
+        verify(mapper).toDTOList(turns);
     }
 
     @Test
@@ -882,6 +835,61 @@ class TurnAssignedServiceTest {
     }
 
     @Test
+    void addRating_FutureTurnScheduled_ThrowsException() {
+        // Contract: a turn scheduled in the FUTURE cannot be rated yet.
+        // (isAfter/isBefore compare instants, so this holds independently of the JVM
+        // default zone or ARGENTINA_ZONE — we assert the real future/past rule, not a
+        // zone-sensitivity the code does not have.)
+        TurnAssigned futureTurn = TurnAssigned.builder()
+                .id(turnId)
+                .doctor(doctor)
+                .patient(patient)
+                .scheduledAt(OffsetDateTime.now().plusHours(2))
+                .status("SCHEDULED")
+                .build();
+
+        when(turnRepo.findById(turnId)).thenReturn(Optional.of(futureTurn));
+
+        RuntimeException ex = assertThrows(RuntimeException.class,
+                () -> turnAssignedService.addRating(turnId, doctorId, 5, java.util.List.of()));
+
+        assertEquals("Can only rate turns that have already occurred", ex.getMessage());
+        verify(ratingRepo, never()).save(any());
+    }
+
+    @Test
+    void addRating_PastTurn_Rateable() {
+        // Contract: a turn that has already occurred (in the past) is rateable.
+        TurnAssigned pastTurn = TurnAssigned.builder()
+                .id(turnId)
+                .doctor(doctor)
+                .patient(patient)
+                .scheduledAt(OffsetDateTime.now().minusMinutes(5))
+                .status("COMPLETED")
+                .build();
+
+        when(turnRepo.findById(turnId)).thenReturn(Optional.of(pastTurn));
+        when(userRepo.findById(doctorId)).thenReturn(Optional.of(doctor));
+        when(ratingRepo.existsByTurnAssigned_IdAndRater_Id(turnId, doctorId)).thenReturn(false);
+
+        com.medibook.api.entity.Rating saved = com.medibook.api.entity.Rating.builder()
+                .id(UUID.randomUUID())
+                .turnAssigned(pastTurn)
+                .rater(doctor)
+                .rated(patient)
+                .score(5)
+                .createdAt(OffsetDateTime.now())
+                .build();
+        when(ratingRepo.save(any(com.medibook.api.entity.Rating.class))).thenReturn(saved);
+
+        com.medibook.api.entity.Rating result =
+                assertDoesNotThrow(() -> turnAssignedService.addRating(turnId, doctorId, 5, java.util.List.of()));
+
+        assertNotNull(result);
+        verify(ratingRepo).save(any(com.medibook.api.entity.Rating.class));
+    }
+
+    @Test
     void completeTurn_ScheduledStatus_Success() {
         TurnAssigned scheduledTurn = TurnAssigned.builder()
                 .id(turnId)
@@ -1012,6 +1020,107 @@ class TurnAssignedServiceTest {
 
         assertTrue(exception.getMessage().contains("Turn cannot be completed"));
         verify(turnRepo, never()).save(any());
+    }
+
+    @Test
+    void completeTurn_HealthCertificate_CallsMedicalCheckAfterPersisting() {
+        TurnAssigned scheduledTurn = TurnAssigned.builder()
+                .id(turnId)
+                .doctor(doctor)
+                .patient(patient)
+                .scheduledAt(OffsetDateTime.now().plusDays(1))
+                .status("SCHEDULED")
+                .motive("HEALTH CERTIFICATE")
+                .build();
+
+        TurnAssigned completedTurn = TurnAssigned.builder()
+                .id(turnId)
+                .doctor(doctor)
+                .patient(patient)
+                .scheduledAt(scheduledTurn.getScheduledAt())
+                .status("COMPLETED")
+                .motive("HEALTH CERTIFICATE")
+                .build();
+
+        TurnResponseDTO response = TurnResponseDTO.builder()
+                .id(turnId)
+                .status("COMPLETED")
+                .build();
+
+        when(turnRepo.findById(turnId)).thenReturn(Optional.of(scheduledTurn));
+        when(turnRepo.save(any(TurnAssigned.class))).thenReturn(completedTurn);
+        when(mapper.toDTO(completedTurn)).thenReturn(response);
+
+        TurnResponseDTO result = turnAssignedService.completeTurn(turnId, doctorId);
+
+        assertNotNull(result);
+        // The external call must happen AFTER the DB persistence (turn saved),
+        // never before, so the transaction is not held open across the network call.
+        org.mockito.InOrder inOrder = org.mockito.Mockito.inOrder(turnRepo, medicalCheckApiService);
+        inOrder.verify(turnRepo).save(scheduledTurn);
+        inOrder.verify(medicalCheckApiService).processMedicalCheckCompletion("patient@example.com");
+    }
+
+    @Test
+    void completeTurn_NonHealthCertificate_DoesNotCallMedicalCheck() {
+        TurnAssigned scheduledTurn = TurnAssigned.builder()
+                .id(turnId)
+                .doctor(doctor)
+                .patient(patient)
+                .scheduledAt(OffsetDateTime.now().plusDays(1))
+                .status("SCHEDULED")
+                .motive("General consultation")
+                .build();
+
+        TurnAssigned completedTurn = TurnAssigned.builder()
+                .id(turnId)
+                .doctor(doctor)
+                .patient(patient)
+                .scheduledAt(scheduledTurn.getScheduledAt())
+                .status("COMPLETED")
+                .motive("General consultation")
+                .build();
+
+        when(turnRepo.findById(turnId)).thenReturn(Optional.of(scheduledTurn));
+        when(turnRepo.save(any(TurnAssigned.class))).thenReturn(completedTurn);
+        when(mapper.toDTO(completedTurn)).thenReturn(TurnResponseDTO.builder().id(turnId).status("COMPLETED").build());
+
+        turnAssignedService.completeTurn(turnId, doctorId);
+
+        verify(medicalCheckApiService, never()).processMedicalCheckCompletion(any());
+    }
+
+    @Test
+    void completeTurnPersist_HealthCertificate_DoesNotCallMedicalCheckInsideTransaction() {
+        // The transactional DB method must NOT trigger the external medical-check call;
+        // that call belongs to the non-transactional orchestrator (completeTurn).
+        TurnAssigned scheduledTurn = TurnAssigned.builder()
+                .id(turnId)
+                .doctor(doctor)
+                .patient(patient)
+                .scheduledAt(OffsetDateTime.now().plusDays(1))
+                .status("SCHEDULED")
+                .motive("HEALTH CERTIFICATE")
+                .build();
+
+        TurnAssigned completedTurn = TurnAssigned.builder()
+                .id(turnId)
+                .doctor(doctor)
+                .patient(patient)
+                .scheduledAt(scheduledTurn.getScheduledAt())
+                .status("COMPLETED")
+                .motive("HEALTH CERTIFICATE")
+                .build();
+
+        when(turnRepo.findById(turnId)).thenReturn(Optional.of(scheduledTurn));
+        when(turnRepo.save(any(TurnAssigned.class))).thenReturn(completedTurn);
+        when(mapper.toDTO(completedTurn)).thenReturn(TurnResponseDTO.builder().id(turnId).status("COMPLETED").build());
+
+        TurnAssignedService.CompletionResult persisted =
+                turnAssignedService.completeTurnPersist(turnId, doctorId);
+
+        assertEquals("patient@example.com", persisted.healthCertificateEmail());
+        verify(medicalCheckApiService, never()).processMedicalCheckCompletion(any());
     }
 
     @Test

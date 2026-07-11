@@ -1,9 +1,10 @@
 package com.medibook.api.controller;
 
+import com.medibook.api.service.RateLimitService;
 import com.medibook.api.service.TurnAssignedService;
 import com.medibook.api.dto.HealthCertificateRequest;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -12,8 +13,6 @@ import org.springframework.web.util.HtmlUtils;
 
 import java.util.Map;
 import java.util.Arrays;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 import java.util.HashMap;
 import jakarta.servlet.http.HttpServletRequest;
@@ -22,17 +21,20 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 
 @RestController
 @RequestMapping("/api/gymcloud")
-@RequiredArgsConstructor
 @Slf4j
 public class ExternalController {
 
     private final TurnAssignedService turnAssignedService;
+    private final RateLimitService externalRateLimitService;
 
-    @Value("${gymcloud.api.keys:test-key}")
+    public ExternalController(TurnAssignedService turnAssignedService,
+                              @Qualifier("externalRateLimitService") RateLimitService externalRateLimitService) {
+        this.turnAssignedService = turnAssignedService;
+        this.externalRateLimitService = externalRateLimitService;
+    }
+
+    @Value("${gymcloud.api.keys}")
     private String allowedApiKeysString;
-
-    private final ConcurrentHashMap<String, AtomicInteger> requestCounts = new ConcurrentHashMap<>();
-    private static final int MAX_REQUESTS_PER_MINUTE = 10;
 
     private static final Pattern EMAIL_PATTERN = Pattern.compile(
         "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
@@ -62,11 +64,7 @@ public class ExternalController {
                     .body(Map.of("error", "Unauthorized", "message", "Invalid API Key"));
         }
 
-        long currentTime = System.currentTimeMillis();
-        String rateLimitKey = apiKey + ":" + (currentTime / 60000); 
-
-        AtomicInteger count = requestCounts.computeIfAbsent(rateLimitKey, k -> new AtomicInteger(0));
-        if (count.incrementAndGet() > MAX_REQUESTS_PER_MINUTE) {
+        if (!externalRateLimitService.tryConsume(apiKey)) {
             return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
                     .body(Map.of("error", "Too Many Requests", "message", "Rate limit exceeded"));
         }

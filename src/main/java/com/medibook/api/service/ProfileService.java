@@ -36,9 +36,12 @@ public class ProfileService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
 
-        if (updateRequest.email() != null && !updateRequest.email().isBlank() && 
+        if (updateRequest.email() != null && !updateRequest.email().isBlank() &&
             !user.getEmail().equals(updateRequest.email())) {
-            throw new IllegalArgumentException("Email already in use");
+            // Email actually changed: block only on a real collision with another user.
+            if (userRepository.existsByEmail(updateRequest.email())) {
+                throw new IllegalArgumentException("Email already in use");
+            }
         }
 
         profileMapper.updateUserFromRequest(user, updateRequest);

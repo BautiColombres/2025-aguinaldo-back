@@ -54,6 +54,16 @@ public class TokenAuthenticationFilter extends OncePerRequestFilter {
                     Collections.singletonList(new SimpleGrantedAuthority("ROLE_" + user.getRole()))
                 );
 
+                // BSEC-M-5 (single source of truth): the SAME authenticated User is
+                // published to BOTH principal sources — the standard Spring SecurityContext
+                // AND the "authenticatedUser" request attribute. They are therefore always
+                // equivalent. Since every protected endpoint is .authenticated() (see
+                // SecurityConfig), an unauthenticated request never reaches a controller,
+                // so both sources are also non-null wherever they are read. Newer/converted
+                // controllers read the principal via Authentication#getPrincipal(); a few
+                // legacy controllers still read request.getAttribute("authenticatedUser").
+                // Both are secure and interchangeable; the request-attribute reads are an
+                // intentional, documented exception, not a second authorization mechanism.
                 SecurityContextHolder.getContext().setAuthentication(authToken);
                 request.setAttribute("authenticatedUser", user);
             }

@@ -110,6 +110,31 @@ class DoctorServiceTest {
     }
 
     @Test
+    void getAllSpecialties_ActiveDoctorWithoutProfile_ExcludedNoNpe() {
+        User doctorWithProfile = new User();
+        doctorWithProfile.setId(UUID.randomUUID());
+        doctorWithProfile.setRole("DOCTOR");
+        doctorWithProfile.setStatus("ACTIVE");
+        com.medibook.api.entity.DoctorProfile profile = new com.medibook.api.entity.DoctorProfile();
+        profile.setSpecialty("Cardiology");
+        doctorWithProfile.setDoctorProfile(profile);
+
+        User doctorWithoutProfile = new User();
+        doctorWithoutProfile.setId(UUID.randomUUID());
+        doctorWithoutProfile.setRole("DOCTOR");
+        doctorWithoutProfile.setStatus("ACTIVE");
+        // Intentionally no doctorProfile -> previously NPE'd at getSpecialty()
+
+        when(userRepository.findDoctorsByStatus("ACTIVE"))
+                .thenReturn(Arrays.asList(doctorWithProfile, doctorWithoutProfile));
+
+        List<String> result = assertDoesNotThrow(() -> doctorService.getAllSpecialties());
+
+        assertEquals(List.of("Cardiology"), result);
+        verify(userRepository).findDoctorsByStatus("ACTIVE");
+    }
+
+    @Test
     void getPatientsByDoctor_Success() {
         List<User> patients = Arrays.asList(patient1, patient2);
         

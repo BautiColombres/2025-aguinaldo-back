@@ -4,6 +4,7 @@ import com.medibook.api.dto.Auth.RegisterRequestDTO;
 import com.medibook.api.dto.Auth.RegisterResponseDTO;
 import com.medibook.api.dto.Auth.SignInRequestDTO;
 import com.medibook.api.dto.Auth.SignInResponseDTO;
+import com.medibook.api.dto.Auth.SignInResultDTO;
 import com.medibook.api.dto.email.EmailResponseDto;
 import com.medibook.api.entity.RefreshToken;
 import com.medibook.api.entity.User;
@@ -60,6 +61,8 @@ class AuthServiceImplTest {
 
     private AuthServiceImpl authService;
 
+    private static final String TEST_HMAC_KEY = "test-jwt-secret-key-for-testing-purposes-only";
+
     private RegisterRequestDTO validPatientRequest;
     private RegisterRequestDTO validDoctorRequest;
     private RegisterRequestDTO validAdminRequest;
@@ -68,7 +71,7 @@ class AuthServiceImplTest {
 
     @BeforeEach
     void setUp() {
-        authService = new AuthServiceImpl(userRepository, refreshTokenRepository, passwordEncoder, userMapper, authMapper, emailService, emailVerificationRepository, jwtService);
+        authService = new AuthServiceImpl(userRepository, refreshTokenRepository, passwordEncoder, userMapper, authMapper, emailService, emailVerificationRepository, jwtService, TEST_HMAC_KEY);
 
         // Mock EmailService async methods
         EmailResponseDto successResponse = EmailResponseDto.builder()
@@ -381,22 +384,24 @@ class AuthServiceImplTest {
         refreshToken.setExpiresAt(ZonedDateTime.now().plusDays(7));
         when(refreshTokenRepository.save(any(RefreshToken.class))).thenReturn(refreshToken);
         
-        when(authMapper.toSignInResponse(eq(sampleUser), any(String.class), any(String.class))).thenReturn(
-            new SignInResponseDTO(sampleUser.getId(), sampleUser.getEmail(), sampleUser.getName(), 
+        when(authMapper.toSignInResponse(eq(sampleUser), any(String.class))).thenReturn(
+            new SignInResponseDTO(sampleUser.getId(), sampleUser.getEmail(), sampleUser.getName(),
                                 sampleUser.getSurname(), sampleUser.getRole(), sampleUser.getStatus(),
-                                "access_token", "refresh_token")
+                                "access_token")
         );
 
         when(jwtService.generateToken(sampleUser)).thenReturn("mocked-jwt-token");
-        SignInResponseDTO result = authService.signIn(validSignInRequest);
+        SignInResultDTO result = authService.signIn(validSignInRequest);
 
         assertNotNull(result);
-        assertNotNull(result.accessToken());
+        assertNotNull(result.response().accessToken());
+        // FSEC-H1 Stage 3: raw refresh token is carried on the result (for the cookie),
+        // NOT inside the response body DTO.
         assertNotNull(result.refreshToken());
-        assertEquals(sampleUser.getId(), result.id());
-        assertEquals(sampleUser.getEmail(), result.email());
-        assertEquals(sampleUser.getRole(), result.role());
-        
+        assertEquals(sampleUser.getId(), result.response().id());
+        assertEquals(sampleUser.getEmail(), result.response().email());
+        assertEquals(sampleUser.getRole(), result.response().role());
+
         verify(userRepository).findByEmail(validSignInRequest.email());
         verify(passwordEncoder).matches(validSignInRequest.password(), sampleUser.getPasswordHash());
         verify(refreshTokenRepository).save(any(RefreshToken.class));
@@ -471,51 +476,118 @@ class AuthServiceImplTest {
         refreshToken.setExpiresAt(ZonedDateTime.now().plusDays(7));
         when(refreshTokenRepository.save(any(RefreshToken.class))).thenReturn(refreshToken);
         
-        when(authMapper.toSignInResponse(eq(pendingDoctor), any(String.class), any(String.class))).thenReturn(
-            new SignInResponseDTO(pendingDoctor.getId(), pendingDoctor.getEmail(), pendingDoctor.getName(), 
+        when(authMapper.toSignInResponse(eq(pendingDoctor), any(String.class))).thenReturn(
+            new SignInResponseDTO(pendingDoctor.getId(), pendingDoctor.getEmail(), pendingDoctor.getName(),
                                 pendingDoctor.getSurname(), pendingDoctor.getRole(), pendingDoctor.getStatus(),
-                                "access_token", "refresh_token")
+                                "access_token")
         );
 
         when(jwtService.generateToken(pendingDoctor)).thenReturn("mocked-jwt-token");
-        SignInResponseDTO result = authService.signIn(validSignInRequest);
+        SignInResultDTO result = authService.signIn(validSignInRequest);
 
         assertNotNull(result);
-        assertEquals("PENDING", result.status());
-        assertEquals("DOCTOR", result.role());
+        assertEquals("PENDING", result.response().status());
+        assertEquals("DOCTOR", result.response().role());
         verify(userRepository).findByEmail(validSignInRequest.email());
         verify(passwordEncoder).matches(validSignInRequest.password(), pendingDoctor.getPasswordHash());
     }
 
+    private RefreshToken ownedRefreshToken(String rawToken, User owner) {
+        RefreshToken rt = new RefreshToken();
+        rt.setUser(owner);
+        rt.setTokenHash(hashToken(rawToken));
+        rt.setExpiresAt(ZonedDateTime.now().plusDays(30));
+        rt.setCreatedAt(ZonedDateTime.now());
+        return rt;
+    }
+
     @Test
-    void signOut_ValidToken_Success() {
-        assertDoesNotThrow(() -> authService.signOut("validToken"));
-        
+    void signOut_OwnerToken_Revoked() {
+        User owner = new User();
+        owner.setId(UUID.randomUUID());
+        when(refreshTokenRepository.findByTokenHash(hashToken("validToken")))
+                .thenReturn(Optional.of(ownedRefreshToken("validToken", owner)));
+
+        assertDoesNotThrow(() -> authService.signOut("validToken", owner.getId()));
+
         verify(refreshTokenRepository).revokeTokenByHash(eq(hashToken("validToken")), any(ZonedDateTime.class));
     }
 
     @Test
-    void signOut_InvalidToken_ThrowsException() {
-        // El método signOut actual no valida el token, simplemente hace revoke
-        assertDoesNotThrow(() -> authService.signOut("invalidToken"));
-        
-        verify(refreshTokenRepository).revokeTokenByHash(eq(hashToken("invalidToken")), any(ZonedDateTime.class));
+    void signOut_NoCaller_Revoked() {
+        // Cookie-only sign-out (no access token): the raw token itself proves possession.
+        User owner = new User();
+        owner.setId(UUID.randomUUID());
+        when(refreshTokenRepository.findByTokenHash(hashToken("validToken")))
+                .thenReturn(Optional.of(ownedRefreshToken("validToken", owner)));
+
+        assertDoesNotThrow(() -> authService.signOut("validToken", null));
+
+        verify(refreshTokenRepository).revokeTokenByHash(eq(hashToken("validToken")), any(ZonedDateTime.class));
     }
 
     @Test
-    void signOut_NullToken_ThrowsException() {
-        // El método signOut ignora tokens nulos
-        assertDoesNotThrow(() -> authService.signOut(null));
-        
+    void signOut_ForeignToken_NotRevoked() {
+        // BBUG-L2: caller must NOT be able to revoke a token owned by a different user.
+        User owner = new User();
+        owner.setId(UUID.randomUUID());
+        UUID attackerId = UUID.randomUUID();
+        when(refreshTokenRepository.findByTokenHash(hashToken("victimToken")))
+                .thenReturn(Optional.of(ownedRefreshToken("victimToken", owner)));
+
+        assertDoesNotThrow(() -> authService.signOut("victimToken", attackerId));
+
         verify(refreshTokenRepository, org.mockito.Mockito.never()).revokeTokenByHash(any(), any());
     }
 
     @Test
-    void signOut_EmptyToken_ThrowsException() {
-        // El método signOut actual no valida el token, simplemente hace revoke
-        assertDoesNotThrow(() -> authService.signOut(""));
-        
-        verify(refreshTokenRepository).revokeTokenByHash(eq(hashToken("")), any(ZonedDateTime.class));
+    void signOut_UnknownToken_NoOp() {
+        when(refreshTokenRepository.findByTokenHash(hashToken("ghostToken")))
+                .thenReturn(Optional.empty());
+
+        assertDoesNotThrow(() -> authService.signOut("ghostToken", UUID.randomUUID()));
+
+        verify(refreshTokenRepository, org.mockito.Mockito.never()).revokeTokenByHash(any(), any());
+    }
+
+    @Test
+    void signOut_NullToken_NoOp() {
+        assertDoesNotThrow(() -> authService.signOut(null, UUID.randomUUID()));
+
+        verify(refreshTokenRepository, org.mockito.Mockito.never()).findByTokenHash(any());
+        verify(refreshTokenRepository, org.mockito.Mockito.never()).revokeTokenByHash(any(), any());
+    }
+
+    @Test
+    void signOut_EmptyToken_NoOp() {
+        assertDoesNotThrow(() -> authService.signOut("", UUID.randomUUID()));
+
+        verify(refreshTokenRepository, org.mockito.Mockito.never()).findByTokenHash(any());
+        verify(refreshTokenRepository, org.mockito.Mockito.never()).revokeTokenByHash(any(), any());
+    }
+
+    @Test
+    void refreshTokenHash_isHmac_notBareSha256() {
+        // BSEC-L-2: the stored refresh-token hash must be a keyed HMAC, not a bare SHA-256.
+        String hmac = hashToken("some-refresh-token");
+        assertNotEquals(sha256("some-refresh-token"), hmac,
+                "refresh token must be stored as HMAC, not bare SHA-256");
+        // Deterministic for the same (key, token).
+        assertEquals(hmac, hashToken("some-refresh-token"));
+        // Different key -> different digest.
+        assertNotEquals(hmac, hmacWithKey("a-completely-different-key", "some-refresh-token"));
+    }
+
+    private String hmacWithKey(String key, String token) {
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new javax.crypto.spec.SecretKeySpec(
+                    key.getBytes(java.nio.charset.StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] hash = mac.doFinal(token.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Test
@@ -527,21 +599,21 @@ class AuthServiceImplTest {
 
         when(refreshTokenRepository.findByTokenHash(hashToken("validRefreshToken"))).thenReturn(Optional.of(refreshToken));
         when(refreshTokenRepository.save(any(RefreshToken.class))).thenReturn(refreshToken);
-        when(authMapper.toSignInResponse(eq(sampleUser), any(String.class), any(String.class))).thenReturn(
-            new SignInResponseDTO(sampleUser.getId(), sampleUser.getEmail(), sampleUser.getName(), 
+        when(authMapper.toSignInResponse(eq(sampleUser), any(String.class))).thenReturn(
+            new SignInResponseDTO(sampleUser.getId(), sampleUser.getEmail(), sampleUser.getName(),
                                 sampleUser.getSurname(), sampleUser.getRole(), sampleUser.getStatus(),
-                                "new_access_token", "new_refresh_token")
+                                "new_access_token")
         );
 
         when(jwtService.generateToken(sampleUser)).thenReturn("new-mocked-jwt-token");
-        SignInResponseDTO result = authService.refreshToken("validRefreshToken");
+        SignInResultDTO result = authService.refreshToken("validRefreshToken");
 
         assertNotNull(result);
-        assertNotNull(result.accessToken());
+        assertNotNull(result.response().accessToken());
         assertNotNull(result.refreshToken());
-        assertEquals(sampleUser.getId(), result.id());
-        assertEquals(sampleUser.getEmail(), result.email());
-        
+        assertEquals(sampleUser.getId(), result.response().id());
+        assertEquals(sampleUser.getEmail(), result.response().email());
+
         verify(refreshTokenRepository).findByTokenHash(hashToken("validRefreshToken"));
         verify(refreshTokenRepository).save(any(RefreshToken.class));
     }
@@ -587,10 +659,10 @@ class AuthServiceImplTest {
 
         when(refreshTokenRepository.findByTokenHash(hashToken("validToken"))).thenReturn(Optional.of(refreshToken));
         when(refreshTokenRepository.save(any(RefreshToken.class))).thenReturn(refreshToken);
-        when(authMapper.toSignInResponse(eq(sampleUser), any(String.class), any(String.class))).thenReturn(
-            new SignInResponseDTO(sampleUser.getId(), sampleUser.getEmail(), sampleUser.getName(), 
+        when(authMapper.toSignInResponse(eq(sampleUser), any(String.class))).thenReturn(
+            new SignInResponseDTO(sampleUser.getId(), sampleUser.getEmail(), sampleUser.getName(),
                                 sampleUser.getSurname(), sampleUser.getRole(), sampleUser.getStatus(),
-                                "new_access_token", "new_refresh_token")
+                                "new_access_token")
         );
 
         // No debería lanzar excepción porque la implementación actual no valida el estado del usuario
@@ -696,18 +768,18 @@ class AuthServiceImplTest {
                 .thenReturn(token2);
 
         // Mock de authMapper para ambas respuestas
-        when(authMapper.toSignInResponse(eq(sampleUser), anyString(), anyString()))
-                .thenReturn(new SignInResponseDTO(sampleUser.getId(), sampleUser.getEmail(), sampleUser.getName(), 
-                        sampleUser.getSurname(), sampleUser.getRole(), sampleUser.getStatus(), "jwt1", "refresh1"))
+        when(authMapper.toSignInResponse(eq(sampleUser), anyString()))
                 .thenReturn(new SignInResponseDTO(sampleUser.getId(), sampleUser.getEmail(), sampleUser.getName(),
-                        sampleUser.getSurname(), sampleUser.getRole(), sampleUser.getStatus(), "jwt2", "refresh2"));
+                        sampleUser.getSurname(), sampleUser.getRole(), sampleUser.getStatus(), "jwt1"))
+                .thenReturn(new SignInResponseDTO(sampleUser.getId(), sampleUser.getEmail(), sampleUser.getName(),
+                        sampleUser.getSurname(), sampleUser.getRole(), sampleUser.getStatus(), "jwt2"));
 
         when(jwtService.generateToken(any(User.class)))
                 .thenReturn("token-1")
                 .thenReturn("token-2");
 
-        SignInResponseDTO result1 = authService.signIn(validSignInRequest);
-        SignInResponseDTO result2 = authService.signIn(validSignInRequest);
+        SignInResultDTO result1 = authService.signIn(validSignInRequest);
+        SignInResultDTO result2 = authService.signIn(validSignInRequest);
 
         assertNotEquals(result1.refreshToken(), result2.refreshToken());
     }
@@ -1718,7 +1790,21 @@ class AuthServiceImplTest {
         assertTrue(e2.getMessage().contains("Slot duration must be between 5 and 180 minutes"));
     }
 
+    // BSEC-L-2: refresh tokens are now stored as keyed HMAC-SHA256, not bare SHA-256. This
+    // helper mirrors the production hmacToken() so the stored-hash assertions stay valid.
     private String hashToken(String token) {
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new javax.crypto.spec.SecretKeySpec(
+                    TEST_HMAC_KEY.getBytes(java.nio.charset.StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] hash = mac.doFinal(token.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    private String sha256(String token) {
         try {
             java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
             byte[] hash = digest.digest(token.getBytes(java.nio.charset.StandardCharsets.UTF_8));

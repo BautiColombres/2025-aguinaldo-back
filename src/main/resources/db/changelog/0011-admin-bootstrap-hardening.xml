@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+          http://www.liquibase.org/xml/ns/dbchangelog
+          https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
+
+    <!-- BSEC-H-4 — add must_reset_password flag for env-provisioned admin.
+         New entity column => MUST live in a changelog (ddl-auto=none). -->
+    <changeSet id="0011-01-add-must-reset-password" author="MediBook_Security">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="users" columnName="must_reset_password"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="users">
+            <column name="must_reset_password" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <!-- BSEC-H-4 — neutralize the committed seed admin from 0005-insert-admin.xml.
+         Do NOT edit the already-applied 0005 changeSet (breaks Liquibase checksums).
+         Instead: disable the static-credential account (status DISABLED + force reset)
+         and invalidate its committed BCrypt hash so the leaked hash is unusable.
+         The real admin is created/updated from env vars by AdminProvisioningRunner. -->
+    <changeSet id="0011-02-neutralize-seed-admin" author="MediBook_Security">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="1">
+                SELECT COUNT(*) FROM users WHERE id = '550e8400-e29b-41d4-a716-446655440000'
+            </sqlCheck>
+        </preConditions>
+        <update tableName="users">
+            <column name="password_hash" value="DISABLED-SEED-ADMIN-NO-LOGIN"/>
+            <column name="status" value="DISABLED"/>
+            <column name="must_reset_password" valueBoolean="true"/>
+            <where>id = '550e8400-e29b-41d4-a716-446655440000'</where>
+        </update>
+    </changeSet>
+
+</databaseChangeLog>

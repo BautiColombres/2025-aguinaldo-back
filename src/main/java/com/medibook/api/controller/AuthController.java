@@ -4,12 +4,15 @@ import com.medibook.api.dto.ErrorResponseDTO;
 import com.medibook.api.dto.Auth.RegisterRequestDTO;
 import com.medibook.api.dto.Auth.RegisterResponseDTO;
 import com.medibook.api.dto.Auth.SignInRequestDTO;
-import com.medibook.api.dto.Auth.SignInResponseDTO;
+import com.medibook.api.dto.Auth.SignInResultDTO;
 import com.medibook.api.service.AuthService;
+import com.medibook.api.util.RefreshTokenCookieUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.*;
@@ -22,9 +25,11 @@ import java.util.Map;
 public class AuthController {
 
     private final AuthService authService;
+    private final RefreshTokenCookieUtil refreshTokenCookieUtil;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, RefreshTokenCookieUtil refreshTokenCookieUtil) {
         this.authService = authService;
+        this.refreshTokenCookieUtil = refreshTokenCookieUtil;
     }
 
     @PostMapping("/register/patient")
@@ -64,6 +69,7 @@ public class AuthController {
     }
 
     @PostMapping("/register/admin")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<?> registerAdmin(
             @Valid @RequestBody RegisterRequestDTO request, 
             HttpServletRequest httpRequest) {
@@ -98,8 +104,13 @@ public class AuthController {
             @Valid @RequestBody SignInRequestDTO request, 
             HttpServletRequest httpRequest) {
         try {
-            SignInResponseDTO response = authService.signIn(request);
-            return ResponseEntity.ok(response);
+            SignInResultDTO result = authService.signIn(request);
+            // FSEC-H1 Stage 3: the refresh token travels ONLY via the httpOnly cookie.
+            // It is never placed in the JSON body (closes the XSS/body-exposure surface).
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.SET_COOKIE,
+                            refreshTokenCookieUtil.build(result.refreshToken()).toString())
+                    .body(result.response());
         } catch (IllegalArgumentException e) {
             String errorCode = determineSignInErrorCode(e.getMessage());
             ErrorResponseDTO error = ErrorResponseDTO.of(
@@ -113,16 +124,29 @@ public class AuthController {
     }
 
     @PostMapping("/signout")
-    public ResponseEntity<?> signOut(
-            @RequestHeader("Refresh-Token") String refreshToken,
-            HttpServletRequest httpRequest) {
+    public ResponseEntity<?> signOut(HttpServletRequest httpRequest) {
+        // FSEC-H1 Stage 3: read the refresh token ONLY from the httpOnly cookie (the
+        // Refresh-Token header fallback has been removed). Always clear the cookie so
+        // signout is idempotent even when the token is absent.
+        String refreshToken = refreshTokenCookieUtil.read(httpRequest).orElse(null);
+        // BBUG-L2: pass the authenticated caller (when the request carries an access token) so
+        // the service can refuse to revoke a refresh token owned by a different user.
+        java.util.UUID callerId = null;
+        var authentication = org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication();
+        if (authentication != null
+                && authentication.getPrincipal() instanceof com.medibook.api.entity.User caller) {
+            callerId = caller.getId();
+        }
         try {
-            authService.signOut(refreshToken);
-            return ResponseEntity.ok().build();
+            authService.signOut(refreshToken, callerId);
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.SET_COOKIE, refreshTokenCookieUtil.clear().toString())
+                    .build();
         } catch (IllegalArgumentException e) {
             ErrorResponseDTO error = ErrorResponseDTO.of(
-                "SIGNOUT_FAILED", 
-                e.getMessage(), 
+                "SIGNOUT_FAILED",
+                e.getMessage(),
                 HttpStatus.BAD_REQUEST.value(),
                 httpRequest.getRequestURI()
             );
@@ -131,16 +155,30 @@ public class AuthController {
     }
 
     @PostMapping("/refresh-token")
-    public ResponseEntity<?> refreshToken(
-            @RequestHeader("Refresh-Token") String refreshToken,
-            HttpServletRequest httpRequest) {
+    public ResponseEntity<?> refreshToken(HttpServletRequest httpRequest) {
+        // FSEC-H1 Stage 3: read the refresh token ONLY from the httpOnly cookie (the
+        // Refresh-Token header fallback has been removed). Missing cookie -> 401.
+        String refreshToken = refreshTokenCookieUtil.read(httpRequest).orElse(null);
+        if (refreshToken == null) {
+            ErrorResponseDTO error = ErrorResponseDTO.of(
+                "TOKEN_REFRESH_FAILED",
+                "Missing refresh token",
+                HttpStatus.UNAUTHORIZED.value(),
+                httpRequest.getRequestURI()
+            );
+            return new ResponseEntity<>(error, HttpStatus.UNAUTHORIZED);
+        }
         try {
-            SignInResponseDTO response = authService.refreshToken(refreshToken);
-            return ResponseEntity.ok(response);
+            SignInResultDTO result = authService.refreshToken(refreshToken);
+            // Rotate the cookie with the freshly-minted raw refresh token (cookie-only).
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.SET_COOKIE,
+                            refreshTokenCookieUtil.build(result.refreshToken()).toString())
+                    .body(result.response());
         } catch (IllegalArgumentException e) {
             ErrorResponseDTO error = ErrorResponseDTO.of(
-                "TOKEN_REFRESH_FAILED", 
-                e.getMessage(), 
+                "TOKEN_REFRESH_FAILED",
+                e.getMessage(),
                 HttpStatus.UNAUTHORIZED.value(),
                 httpRequest.getRequestURI()
             );
@@ -191,6 +229,20 @@ public class AuthController {
         );
         
         return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<ErrorResponseDTO> handleAccessDenied(
+            org.springframework.security.access.AccessDeniedException ex, HttpServletRequest request) {
+
+        ErrorResponseDTO error = ErrorResponseDTO.of(
+            "FORBIDDEN",
+            "Access denied",
+            HttpStatus.FORBIDDEN.value(),
+            request.getRequestURI()
+        );
+
+        return new ResponseEntity<>(error, HttpStatus.FORBIDDEN);
     }
 
     @ExceptionHandler(Exception.class)

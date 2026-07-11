@@ -2,16 +2,13 @@ package com.medibook.api.controller;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 import com.medibook.api.dto.Turn.TurnCreateRequestDTO;
-import com.medibook.api.dto.Turn.TurnReserveRequestDTO;
 import com.medibook.api.dto.Turn.TurnResponseDTO;
-import com.medibook.api.entity.TurnAssigned;
 
 import static com.medibook.api.util.DateTimeUtils.ARGENTINA_ZONE;
 import com.medibook.api.entity.User;
@@ -27,6 +24,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import com.medibook.api.util.ErrorResponseUtil;
 import org.springframework.web.bind.annotation.*;
 
@@ -42,10 +40,12 @@ public class TurnAssignedController {
 
     @PostMapping
     public ResponseEntity<Object> createTurn(
-            @Valid @RequestBody TurnCreateRequestDTO dto, 
-            HttpServletRequest request) {
-        
-        User authenticatedUser = (User) request.getAttribute("authenticatedUser");
+            @Valid @RequestBody TurnCreateRequestDTO dto,
+            Authentication authentication) {
+
+        // BSEC-M-5: read the principal from the standard SecurityContext (set by
+        // TokenAuthenticationFilter) instead of the request attribute.
+        User authenticatedUser = (User) authentication.getPrincipal();
         
         if (!AuthorizationUtil.isPatient(authenticatedUser)) {
             return new ResponseEntity<>(
@@ -64,8 +64,23 @@ public class TurnAssignedController {
                 HttpStatus.BAD_REQUEST);
         }
         
-        TurnResponseDTO result = turnService.createTurn(dto);
-        return new ResponseEntity<>(result, HttpStatus.CREATED);
+        // BBUG-M4: only surface a message for the KNOWN business case (slot conflict → 409;
+        // that string is safe/intended). Any OTHER RuntimeException (NPE, persistence
+        // failure, unexpected fault) must NOT be echoed to the client nor masked as a 400:
+        // let it propagate so the framework returns a generic 500 (server.error.include-*
+        // are set to never), matching the BSEC-M-3 generic-message rule.
+        try {
+            TurnResponseDTO result = turnService.createTurn(dto);
+            return new ResponseEntity<>(result, HttpStatus.CREATED);
+        } catch (RuntimeException e) {
+            String message = e.getMessage();
+            if (message != null && message.contains("already taken")) {
+                return new ResponseEntity<>(
+                        Map.of("error", HttpStatus.CONFLICT.getReasonPhrase(), "message", message),
+                        HttpStatus.CONFLICT);
+            }
+            throw e;
+        }
     }
 
     @GetMapping("/available")
@@ -84,10 +99,12 @@ public class TurnAssignedController {
         }
         
         List<OffsetDateTime> availableTimes = new ArrayList<>();
-        ZoneOffset argentinaOffset = ZoneOffset.of("-03:00");
-        
+
+        // BBUG-L1: derive the offset from the project ARGENTINA_ZONE instead of a hardcoded
+        // "-03:00" literal, so it stays correct across any DST/offset change for the zone.
         for (AvailableSlotDTO slot : availableSlots) {
-            OffsetDateTime slotDateTime = slot.getDate().atTime(slot.getStartTime()).atOffset(argentinaOffset);
+            OffsetDateTime slotDateTime = slot.getDate().atTime(slot.getStartTime())
+                    .atZone(ARGENTINA_ZONE).toOffsetDateTime();
             
             boolean isOccupied = turnAssignedRepository.existsByDoctor_IdAndScheduledAtAndStatusNotCancelled(doctorId, slotDateTime);
             
@@ -99,28 +116,12 @@ public class TurnAssignedController {
         return ResponseEntity.ok(availableTimes);
     }
 
-    @PostMapping("/reserve")
-    public ResponseEntity<Object> reserveTurn(
-            @RequestBody TurnReserveRequestDTO dto,
-            HttpServletRequest request) {
-        
-        User authenticatedUser = (User) request.getAttribute("authenticatedUser");
-        
-        ResponseEntity<Object> validationError = TurnAuthorizationUtil.validatePatientTurnReservation(authenticatedUser, dto.getPatientId());
-        if (validationError != null) {
-            return validationError;
-        }
-        
-        TurnAssigned result = turnService.reserveTurn(dto.getTurnId(), dto.getPatientId());
-        return ResponseEntity.ok(result);
-    }
-
     @GetMapping("/my-turns")
     public ResponseEntity<Object> getMyTurns(
             @RequestParam(required = false) String status,
-            HttpServletRequest request) {
-        
-        User authenticatedUser = (User) request.getAttribute("authenticatedUser");
+            Authentication authentication) {
+
+        User authenticatedUser = (User) authentication.getPrincipal();
         
         List<TurnResponseDTO> turns;
         
@@ -147,9 +148,9 @@ public class TurnAssignedController {
     public ResponseEntity<Object> getTurnsByDoctor(
             @PathVariable UUID doctorId,
             @RequestParam(required = false) String status,
-            HttpServletRequest request) {
-        
-        User authenticatedUser = (User) request.getAttribute("authenticatedUser");
+            Authentication authentication) {
+
+        User authenticatedUser = (User) authentication.getPrincipal();
         
         ResponseEntity<Object> validationError = TurnAuthorizationUtil.validateDoctorTurnAccess(authenticatedUser, doctorId);
         if (validationError != null) {
@@ -170,9 +171,9 @@ public class TurnAssignedController {
     public ResponseEntity<Object> getTurnsByPatient(
             @PathVariable UUID patientId,
             @RequestParam(required = false) String status,
-            HttpServletRequest request) {
-        
-        User authenticatedUser = (User) request.getAttribute("authenticatedUser");
+            Authentication authentication) {
+
+        User authenticatedUser = (User) authentication.getPrincipal();
         
         ResponseEntity<Object> validationError = TurnAuthorizationUtil.validatePatientTurnAccess(authenticatedUser, patientId);
         if (validationError != null) {
@@ -192,10 +193,14 @@ public class TurnAssignedController {
     @PatchMapping("/{turnId}/cancel")
     public ResponseEntity<Object> cancelTurn(
             @PathVariable UUID turnId,
-            HttpServletRequest request) {
-        
-        User authenticatedUser = (User) request.getAttribute("authenticatedUser");
-        
+            Authentication authentication) {
+
+        // BSEC-L-1: null-safe principal — a missing user yields 401 instead of an NPE -> 500.
+        User authenticatedUser = AuthorizationUtil.extractAuthenticatedUser(authentication);
+        if (authenticatedUser == null) {
+            return AuthorizationUtil.createUnauthenticatedResponse();
+        }
+
         if (!"PATIENT".equals(authenticatedUser.getRole()) && !"DOCTOR".equals(authenticatedUser.getRole())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body("Only patients and doctors can cancel turns");
@@ -213,9 +218,11 @@ public class TurnAssignedController {
     @PostMapping("/{turnId}/complete")
     public ResponseEntity<Object> completeTurn(
             @PathVariable UUID turnId,
+            Authentication authentication,
             HttpServletRequest request) {
 
-        User authenticatedUser = (User) request.getAttribute("authenticatedUser");
+        // BSEC-M-5: principal from SecurityContext; request kept only for getRequestURI().
+        User authenticatedUser = (User) authentication.getPrincipal();
 
         if (!"DOCTOR".equals(authenticatedUser.getRole())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
@@ -234,9 +241,11 @@ public class TurnAssignedController {
     @PostMapping("/{turnId}/no-show")
     public ResponseEntity<Object> markTurnAsNoShow(
             @PathVariable UUID turnId,
+            Authentication authentication,
             HttpServletRequest request) {
 
-        User authenticatedUser = (User) request.getAttribute("authenticatedUser");
+        // BSEC-M-5: principal from SecurityContext; request kept only for getRequestURI().
+        User authenticatedUser = (User) authentication.getPrincipal();
 
         if (!"DOCTOR".equals(authenticatedUser.getRole())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)

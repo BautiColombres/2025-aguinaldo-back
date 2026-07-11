@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+          http://www.liquibase.org/xml/ns/dbchangelog
+          https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
+
+    <!--
+        BBUG-M2: standardize the canceled turn status spelling.
+        The canonical value is `CANCELED` (one L) — production code writes and reads
+        it exclusively (TurnAssignedService#cancelTurn, TurnAssignedRepository slot
+        queries, DoctorService metrics). The double-L variant `CANCELLED` only ever
+        appeared in tests and the unrelated NotificationType.TURN_CANCELLED enum.
+
+        This reconciles any legacy `turns_assigned` rows that may still carry the
+        stale `CANCELLED` spelling to the canonical `CANCELED`. On a clean database
+        this is effectively a no-op (no rows match).
+
+        Plain SQL UPDATE on a text column — no jsonb involved. Under H2 (tests)
+        Liquibase is disabled and the schema comes from ddl-auto, so the dbms
+        precondition keeps this a no-op there.
+    -->
+    <changeSet id="0014-01-standardize-canceled-status" author="MediBook_Bugfix">
+        <preConditions onFail="MARK_RAN">
+            <dbms type="postgresql"/>
+            <tableExists tableName="turns_assigned"/>
+        </preConditions>
+
+        <sql>
+            UPDATE turns_assigned
+            SET status = 'CANCELED'
+            WHERE status = 'CANCELLED';
+        </sql>
+    </changeSet>
+
+</databaseChangeLog>

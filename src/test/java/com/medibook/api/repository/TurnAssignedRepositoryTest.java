@@ -54,7 +54,7 @@ class TurnAssignedRepositoryTest {
         turnAssigned2 = createTurnAssigned(doctorUser, otherPatientUser, 
             OffsetDateTime.now().plusDays(2), "RESERVED");
         turnAssigned3 = createTurnAssigned(doctorUser, patientUser, 
-            OffsetDateTime.now().plusDays(3), "CANCELLED");
+            OffsetDateTime.now().plusDays(3), "CANCELED");
         
         turnAssigned1 = entityManager.persistAndFlush(turnAssigned1);
         turnAssigned2 = entityManager.persistAndFlush(turnAssigned2);
@@ -143,7 +143,7 @@ class TurnAssignedRepositoryTest {
             .findByDoctor_IdAndStatusOrderByScheduledAtDesc(doctorUser.getId(), "RESERVED");
         
         List<TurnAssigned> cancelledTurns = turnAssignedRepository
-            .findByDoctor_IdAndStatusOrderByScheduledAtDesc(doctorUser.getId(), "CANCELLED");
+            .findByDoctor_IdAndStatusOrderByScheduledAtDesc(doctorUser.getId(), "CANCELED");
         assertEquals(1, scheduledTurns.size());
         assertEquals("SCHEDULED", scheduledTurns.get(0).getStatus());
         
@@ -151,7 +151,7 @@ class TurnAssignedRepositoryTest {
         assertEquals("RESERVED", reservedTurns.get(0).getStatus());
         
         assertEquals(1, cancelledTurns.size());
-        assertEquals("CANCELLED", cancelledTurns.get(0).getStatus());
+        assertEquals("CANCELED", cancelledTurns.get(0).getStatus());
     }
 
     @Test
@@ -168,13 +168,13 @@ class TurnAssignedRepositoryTest {
             .findByPatient_IdAndStatusOrderByScheduledAtDesc(patientUser.getId(), "SCHEDULED");
         
         List<TurnAssigned> cancelledTurns = turnAssignedRepository
-            .findByPatient_IdAndStatusOrderByScheduledAtDesc(patientUser.getId(), "CANCELLED");
+            .findByPatient_IdAndStatusOrderByScheduledAtDesc(patientUser.getId(), "CANCELED");
         assertEquals(1, scheduledTurns.size());
         assertEquals("SCHEDULED", scheduledTurns.get(0).getStatus());
         assertEquals(patientUser.getId(), scheduledTurns.get(0).getPatient().getId());
         
         assertEquals(1, cancelledTurns.size());
-        assertEquals("CANCELLED", cancelledTurns.get(0).getStatus());
+        assertEquals("CANCELED", cancelledTurns.get(0).getStatus());
         assertEquals(patientUser.getId(), cancelledTurns.get(0).getPatient().getId());
     }
 
@@ -237,10 +237,10 @@ class TurnAssignedRepositoryTest {
     @Test
     void findTurnsByMultipleCriteria_Success() {
         List<TurnAssigned> activeTurns = turnAssignedRepository.findAll().stream()
-            .filter(turn -> !turn.getStatus().equals("CANCELLED"))
+            .filter(turn -> !turn.getStatus().equals("CANCELED"))
             .filter(turn -> turn.getScheduledAt().isAfter(OffsetDateTime.now()))
             .toList();        assertEquals(2, activeTurns.size());
-        activeTurns.forEach(turn -> assertNotEquals("CANCELLED", turn.getStatus()));
+        activeTurns.forEach(turn -> assertNotEquals("CANCELED", turn.getStatus()));
     }
 
     @Test

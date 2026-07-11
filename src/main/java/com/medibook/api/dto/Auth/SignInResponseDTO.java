@@ -9,6 +9,5 @@ public record SignInResponseDTO(
     String surname,
     String role,
     String status,
-    String accessToken,
-    String refreshToken
+    String accessToken
 ) {}

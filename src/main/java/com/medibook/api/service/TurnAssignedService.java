@@ -10,11 +10,16 @@ import com.medibook.api.repository.RatingRepository;
 import com.medibook.api.repository.TurnAssignedRepository;
 import com.medibook.api.repository.UserRepository;
 import com.medibook.api.util.DateTimeUtils;
+import com.medibook.api.util.LogMaskingUtil;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import reactor.core.scheduler.Schedulers;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -39,6 +44,16 @@ public class TurnAssignedService {
     private final BadgeEvaluationTriggerService badgeEvaluationTrigger;
     private final MedicalCheckApiService medicalCheckApiService;
     private static final ZoneId ARGENTINA_ZONE = ZoneId.of("America/Argentina/Buenos_Aires");
+
+    /**
+     * Self-reference through the Spring transactional proxy, so
+     * {@link #completeTurnPersist} runs within its own transaction even though it is
+     * invoked from {@link #completeTurn} (self-invocation would otherwise bypass the
+     * proxy). Injected lazily to avoid a constructor cycle.
+     */
+    @Autowired
+    @Lazy
+    private TurnAssignedService self;
 
     public TurnResponseDTO createTurn(TurnCreateRequestDTO dto) {
         User doctor = userRepo.findById(dto.getDoctorId())
@@ -105,9 +120,9 @@ public class TurnAssignedService {
                 saved.getId().toString()
             ).thenAccept(response -> {
                 if (response.isSuccess()) {
-                    log.info("Confirmación enviada al paciente: {}", patientEmail);
+                    log.info("Confirmación enviada al paciente: {}", LogMaskingUtil.maskEmail(patientEmail));
                 } else {
-                    log.warn("Falló confirmación al paciente {}: {}", patientEmail, response.getMessage());
+                    log.warn("Falló confirmación al paciente {}: {}", LogMaskingUtil.maskEmail(patientEmail), response.getMessage());
                 }
             });
             
@@ -120,14 +135,14 @@ public class TurnAssignedService {
                 saved.getId().toString()
             ).thenAccept(response -> {
                 if (response.isSuccess()) {
-                    log.info("Confirmación enviada al doctor: {}", doctorEmail);
+                    log.info("Confirmación enviada al doctor: {}", LogMaskingUtil.maskEmail(doctorEmail));
                 } else {
-                    log.warn("Falló confirmación al doctor {}: {}", doctorEmail, response.getMessage());
+                    log.warn("Falló confirmación al doctor {}: {}", LogMaskingUtil.maskEmail(doctorEmail), response.getMessage());
                 }
             });
             
-            log.info("Emails de confirmación de cita encolados para paciente {} y doctor {}", 
-                    patientEmail, doctorEmail);
+            log.info("Emails de confirmación de cita encolados para paciente {} y doctor {}",
+                    LogMaskingUtil.maskEmail(patientEmail), LogMaskingUtil.maskEmail(doctorEmail));
             
         } catch (Exception e) {
             log.warn("Error encolando emails de confirmación de cita: {}", e.getMessage());
@@ -155,56 +170,21 @@ public class TurnAssignedService {
         return mapper.toDTO(saved);
     }
 
-    public TurnAssigned reserveTurn(UUID turnId, UUID patientId) {
-        TurnAssigned turn = turnRepo.findById(turnId)
-                .orElseThrow(() -> new RuntimeException("Turn not found"));
-
-        if (!"AVAILABLE".equals(turn.getStatus())) {
-            throw new RuntimeException("Turn is not available");
-        }
-
-        User patient = userRepo.findById(patientId)
-                .orElseThrow(() -> new RuntimeException("Patient not found"));
-
-        turn.setPatient(patient);
-        turn.setStatus("RESERVED");
-        TurnAssigned saved = turnRepo.save(turn);
-
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-        long daysDifference = java.time.Duration.between(now, turn.getScheduledAt()).toDays();
-        if (daysDifference >= 1) {
-            badgeEvaluationTrigger.evaluateAfterAdvanceBooking(patientId);
-        }
-
-        return saved;
-    }
-    
     public List<TurnResponseDTO> getTurnsByDoctor(UUID doctorId) {
-        List<TurnAssigned> turns = turnRepo.findByDoctor_IdOrderByScheduledAtDesc(doctorId);
-        return turns.stream()
-                .map(mapper::toDTO)
-                .collect(Collectors.toList());
+        // BBUG-L4: batch mapping avoids per-turn rating/file lookups (N+1).
+        return mapper.toDTOList(turnRepo.findByDoctor_IdOrderByScheduledAtDesc(doctorId));
     }
-    
+
     public List<TurnResponseDTO> getTurnsByPatient(UUID patientId) {
-        List<TurnAssigned> turns = turnRepo.findByPatient_IdOrderByScheduledAtDesc(patientId);
-        return turns.stream()
-                .map(mapper::toDTO)
-                .collect(Collectors.toList());
+        return mapper.toDTOList(turnRepo.findByPatient_IdOrderByScheduledAtDesc(patientId));
     }
-    
+
     public List<TurnResponseDTO> getTurnsByDoctorAndStatus(UUID doctorId, String status) {
-        List<TurnAssigned> turns = turnRepo.findByDoctor_IdAndStatusOrderByScheduledAtDesc(doctorId, status);
-        return turns.stream()
-                .map(mapper::toDTO)
-                .collect(Collectors.toList());
+        return mapper.toDTOList(turnRepo.findByDoctor_IdAndStatusOrderByScheduledAtDesc(doctorId, status));
     }
-    
+
     public List<TurnResponseDTO> getTurnsByPatientAndStatus(UUID patientId, String status) {
-        List<TurnAssigned> turns = turnRepo.findByPatient_IdAndStatusOrderByScheduledAtDesc(patientId, status);
-        return turns.stream()
-                .map(mapper::toDTO)
-                .collect(Collectors.toList());
+        return mapper.toDTOList(turnRepo.findByPatient_IdAndStatusOrderByScheduledAtDesc(patientId, status));
     }
     
     private final com.medibook.api.repository.TurnModifyRequestRepository turnModifyRequestRepository;
@@ -244,14 +224,22 @@ public class TurnAssignedService {
             badgeEvaluationTrigger.evaluateAfterTurnCancellation(turn.getPatient().getId());
         }
         
+        // BBUG-H4: never block a reactive chain from here. File cleanup on cancel is
+        // best-effort — offload the whole reactive delete onto a bounded scheduler and
+        // subscribe (fire-and-forget) instead of calling .block() on the caller thread.
+        // Success/failure are logged; cancellation succeeds regardless of file cleanup.
         try {
             if (turnFileService.fileExistsForTurn(turnId)) {
                 log.info("Deleting file associated with canceled turn: {}", turnId);
-                turnFileService.deleteTurnFile(turnId).block(); 
-                log.info("File successfully deleted for canceled turn: {}", turnId);
+                turnFileService.deleteTurnFile(turnId)
+                        .subscribeOn(Schedulers.boundedElastic())
+                        .subscribe(
+                                unused -> log.info("File successfully deleted for canceled turn: {}", turnId),
+                                error -> log.warn("Failed to delete file for canceled turn {}: {}",
+                                        turnId, error.getMessage()));
             }
         } catch (Exception e) {
-            log.warn("Failed to delete file for canceled turn {}: {}", turnId, e.getMessage());
+            log.warn("Failed to schedule file deletion for canceled turn {}: {}", turnId, e.getMessage());
         }
 
         try {
@@ -273,9 +261,9 @@ public class TurnAssignedService {
                 time
             ).thenAccept(response -> {
                 if (response.isSuccess()) {
-                    log.info("Email de cancelación enviado al paciente: {}", patientEmail);
+                    log.info("Email de cancelación enviado al paciente: {}", LogMaskingUtil.maskEmail(patientEmail));
                 } else {
-                    log.warn("Falló email de cancelación al paciente {}: {}", patientEmail, response.getMessage());
+                    log.warn("Falló email de cancelación al paciente {}: {}", LogMaskingUtil.maskEmail(patientEmail), response.getMessage());
                 }
             });
             
@@ -287,14 +275,14 @@ public class TurnAssignedService {
                 time
             ).thenAccept(response -> {
                 if (response.isSuccess()) {
-                    log.info("Email de cancelación enviado al doctor: {}", doctorEmail);
+                    log.info("Email de cancelación enviado al doctor: {}", LogMaskingUtil.maskEmail(doctorEmail));
                 } else {
-                    log.warn("Falló email de cancelación al doctor {}: {}", doctorEmail, response.getMessage());
+                    log.warn("Falló email de cancelación al doctor {}: {}", LogMaskingUtil.maskEmail(doctorEmail), response.getMessage());
                 }
             });
             
-            log.info("Emails de cancelación encolados para paciente {} y doctor {}", 
-                    patientEmail, doctorEmail);
+            log.info("Emails de cancelación encolados para paciente {} y doctor {}",
+                    LogMaskingUtil.maskEmail(patientEmail), LogMaskingUtil.maskEmail(doctorEmail));
             
         } catch (Exception e) {
             log.warn("Error encolando emails de cancelación: {}", e.getMessage());
@@ -331,7 +319,47 @@ public class TurnAssignedService {
         return mapper.toDTO(saved);
     }
 
+    /**
+     * Result of the transactional part of completing a turn.
+     *
+     * @param dto                    the response for the completed turn
+     * @param healthCertificateEmail the patient email that requires an external
+     *                               medical-check registration, or {@code null} if none
+     */
+    public record CompletionResult(TurnResponseDTO dto, String healthCertificateEmail) {
+    }
+
+    /**
+     * Completes a turn. The DB mutation happens inside a transaction
+     * ({@link #completeTurnPersist}); the external medical-check API call is issued
+     * AFTERWARDS, outside the transactional boundary, so a slow/failing network call
+     * never holds a DB connection/transaction open.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public TurnResponseDTO completeTurn(UUID turnId, UUID doctorId) {
+        CompletionResult result = self.completeTurnPersist(turnId, doctorId);
+
+        String email = result.healthCertificateEmail();
+        if (email != null) {
+            try {
+                log.info("Processing health certificate completion for patient: {}", LogMaskingUtil.maskEmail(email));
+                medicalCheckApiService.processMedicalCheckCompletion(email);
+            } catch (Exception e) {
+                log.error("Error processing medical check API call for turn: {}", turnId, e);
+                // Don't fail the turn completion if external API fails
+            }
+        }
+
+        return result.dto();
+    }
+
+    /**
+     * Transactional DB work for completing a turn. Does NOT perform any external
+     * network call; it only reports (via {@link CompletionResult}) whether a
+     * health-certificate medical-check registration is required.
+     */
+    @Transactional
+    public CompletionResult completeTurnPersist(UUID turnId, UUID doctorId) {
         TurnAssigned turn = turnRepo.findById(turnId)
                 .orElseThrow(() -> new RuntimeException("Turn not found"));
 
@@ -346,21 +374,14 @@ public class TurnAssignedService {
         turn.setStatus("COMPLETED");
         TurnAssigned saved = turnRepo.save(turn);
 
-        // Check if this is a health certificate turn and process external API call
+        String healthCertificateEmail = null;
         if ("HEALTH CERTIFICATE".equalsIgnoreCase(turn.getMotive()) && turn.getPatient() != null) {
-            try {
-                String patientEmail = turn.getPatient().getEmail();
-                log.info("Processing health certificate completion for patient: {}", patientEmail);
-                medicalCheckApiService.processMedicalCheckCompletion(patientEmail);
-            } catch (Exception e) {
-                log.error("Error processing medical check API call for turn: {}", turnId, e);
-                // Don't fail the turn completion if external API fails
-            }
+            healthCertificateEmail = turn.getPatient().getEmail();
         }
 
         if (turn.getDoctor() != null && turn.getPatient() != null) {
             badgeEvaluationTrigger.evaluateAfterTurnCompletion(
-                turn.getDoctor().getId(), 
+                turn.getDoctor().getId(),
                 turn.getPatient().getId()
             );
             badgeEvaluationTrigger.evaluateAfterTurnCompletion(
@@ -369,7 +390,7 @@ public class TurnAssignedService {
             );
         }
 
-        return mapper.toDTO(saved);
+        return new CompletionResult(mapper.toDTO(saved), healthCertificateEmail);
     }
 
     public TurnResponseDTO markTurnAsNoShow(UUID turnId, UUID doctorId) {
@@ -406,11 +427,13 @@ public class TurnAssignedService {
         TurnAssigned turn = turnRepo.findById(turnId)
                 .orElseThrow(() -> new RuntimeException("Turn not found"));
 
-        if ("CANCELED".equals(turn.getStatus()) || "CANCELLED".equals(turn.getStatus())) {
+        if ("CANCELED".equals(turn.getStatus())) {
             throw new RuntimeException("Cannot rate canceled turns");
         }
-        
-        OffsetDateTime now = OffsetDateTime.now();
+
+        // BBUG-M3: use the project timezone (ARGENTINA_ZONE) instead of the JVM default
+        // so the "turn has already occurred" check is evaluated against a well-defined zone.
+        OffsetDateTime now = OffsetDateTime.now(ARGENTINA_ZONE);
         if (turn.getScheduledAt().isAfter(now)) {
             throw new RuntimeException("Can only rate turns that have already occurred");
         }

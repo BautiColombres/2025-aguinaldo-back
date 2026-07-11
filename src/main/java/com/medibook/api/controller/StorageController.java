@@ -1,15 +1,19 @@
 package com.medibook.api.controller;
 
+import com.medibook.api.dto.ErrorResponseDTO;
+import com.medibook.api.dto.Storage.StorageMessageDTO;
 import com.medibook.api.service.SupabaseStorageService;
 import com.medibook.api.service.TurnFileService;
+import com.medibook.api.util.StorageSecurity;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import reactor.core.publisher.Mono;
 
 import java.util.UUID;
 
@@ -19,12 +23,16 @@ import java.util.UUID;
 @Slf4j
 public class StorageController {
 
+    private static final String BASE_PATH = "/api/storage";
+
     private final SupabaseStorageService supabaseStorageService;
     private final TurnFileService turnFileService;
 
+    // ---- Turn-file endpoints (patient-owned, BSEC-H-5 ownership via @storageAuthz) ----
+
     @PostMapping(value = "/upload-turn-file", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasRole('PATIENT')")
-    public ResponseEntity<String> uploadTurnFile(
+    @PreAuthorize("hasRole('PATIENT') and @storageAuthz.canManageTurnFile(authentication, #turnId)")
+    public ResponseEntity<?> uploadTurnFile(
             @RequestParam("turnId") UUID turnId,
             @RequestParam("file") MultipartFile file) {
 
@@ -34,92 +42,111 @@ public class StorageController {
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(result);
         } catch (Exception error) {
-            log.error("Error uploading turn file: {}", error.getMessage());
-            String message = error.getMessage();
-            if (error.getCause() != null) {
-                message = error.getCause().getMessage();
-            }
-            return ResponseEntity.badRequest()
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body("{\"error\":\"" + message + "\"}");
+            log.error("Error uploading turn file for turnId {}: {}", turnId, error.getMessage());
+            return errorResponse(HttpStatus.BAD_REQUEST,
+                    "No se pudo subir el archivo", BASE_PATH + "/upload-turn-file");
         }
     }
 
     @DeleteMapping("/delete-turn-file/{turnId}")
-    @PreAuthorize("hasRole('PATIENT')")
-    public ResponseEntity<String> deleteTurnFile(@PathVariable UUID turnId) {
+    @PreAuthorize("hasRole('PATIENT') and @storageAuthz.canManageTurnFile(authentication, #turnId)")
+    public ResponseEntity<?> deleteTurnFile(@PathVariable UUID turnId) {
+        String path = BASE_PATH + "/delete-turn-file/" + turnId;
         try {
             turnFileService.deleteTurnFile(turnId).block();
-            return ResponseEntity.ok()
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body("{\"message\":\"Archivo eliminado exitosamente\"}");
+            return ResponseEntity.ok(new StorageMessageDTO("Archivo eliminado exitosamente"));
         } catch (Exception error) {
-             log.error("Error deleting turn file: {}", error.getMessage());
-             String message = error.getMessage();
-             if (message != null && message.contains("no encontrado")) {
-                 return ResponseEntity.status(404)
-                         .contentType(MediaType.APPLICATION_JSON)
-                         .body("{\"error\":\"" + message + "\"}");
-             }
-             if (message != null && message.contains("turno completado")) {
-                 return ResponseEntity.status(400)
-                         .contentType(MediaType.APPLICATION_JSON)
-                         .body("{\"error\":\"" + message + "\"}");
-             }
-             return ResponseEntity.status(500)
-                     .contentType(MediaType.APPLICATION_JSON)
-                     .body("{\"error\":\"" + (message != null ? message : "Error desconocido") + "\"}");
+            String message = error.getMessage();
+            log.error("Error deleting turn file for turnId {}: {}", turnId, message);
+            if (message != null && message.contains("no encontrado")) {
+                return errorResponse(HttpStatus.NOT_FOUND, "Archivo no encontrado", path);
+            }
+            if (message != null && message.contains("turno completado")) {
+                return errorResponse(HttpStatus.BAD_REQUEST,
+                        "No se puede eliminar el archivo de un turno completado", path);
+            }
+            return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "No se pudo eliminar el archivo", path);
         }
     }
 
+    // ---- Generic endpoints (admin-only, fixed bucket allowlist, BSEC-H-5 / BSEC-H-2) ----
+
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @PreAuthorize("hasRole('DOCTOR') or hasRole('PATIENT') or hasRole('ADMIN')")
-    public Mono<ResponseEntity<String>> uploadFile(
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> uploadFile(
             @RequestParam("bucket") String bucketName,
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "fileName", required = false) String fileName) {
 
+        String path = BASE_PATH + "/upload";
         String finalFileName = fileName != null ? fileName : file.getOriginalFilename();
 
-        return supabaseStorageService.uploadFile(bucketName, finalFileName, file)
-                .map(publicUrl -> ResponseEntity.ok()
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .body("{\"url\":\"" + publicUrl + "\"}"))
-                .onErrorResume(error -> {
-                    log.error("Error uploading file: {}", error.getMessage());
-                    return Mono.just(ResponseEntity.badRequest()
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .body("{\"error\":\"" + error.getMessage() + "\"}"));
-                });
+        try {
+            StorageSecurity.requireAllowedBucket(bucketName);
+            StorageSecurity.validateFileName(finalFileName);
+        } catch (IllegalArgumentException e) {
+            return errorResponse(HttpStatus.BAD_REQUEST, e.getMessage(), path);
+        }
+
+        try {
+            String publicUrl = supabaseStorageService.uploadFile(bucketName, finalFileName, file).block();
+            return ResponseEntity.ok(new UrlResponse(publicUrl));
+        } catch (Exception error) {
+            log.error("Error uploading file: {}", error.getMessage());
+            return errorResponse(HttpStatus.BAD_REQUEST, "No se pudo subir el archivo", path);
+        }
     }
 
     @DeleteMapping("/delete/{bucketName}/{fileName}")
-    @PreAuthorize("hasRole('DOCTOR') or hasRole('ADMIN')")
-    public Mono<ResponseEntity<String>> deleteFile(
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> deleteFile(
             @PathVariable String bucketName,
             @PathVariable String fileName) {
 
-        return supabaseStorageService.deleteFile(bucketName, fileName)
-                .then(Mono.just(ResponseEntity.ok()
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .body("{\"message\":\"Archivo eliminado exitosamente\"}")))
-                .onErrorResume(error -> {
-                    log.error("Error deleting file: {}", error.getMessage());
-                    return Mono.just(ResponseEntity.badRequest()
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .body("{\"error\":\"" + error.getMessage() + "\"}"));
-                });
+        String path = BASE_PATH + "/delete/" + bucketName + "/" + fileName;
+        try {
+            StorageSecurity.requireAllowedBucket(bucketName);
+            StorageSecurity.validateFileName(fileName);
+        } catch (IllegalArgumentException e) {
+            return errorResponse(HttpStatus.BAD_REQUEST, e.getMessage(), path);
+        }
+
+        try {
+            supabaseStorageService.deleteFile(bucketName, fileName).block();
+            return ResponseEntity.ok(new StorageMessageDTO("Archivo eliminado exitosamente"));
+        } catch (Exception error) {
+            log.error("Error deleting file: {}", error.getMessage());
+            return errorResponse(HttpStatus.BAD_REQUEST, "No se pudo eliminar el archivo", path);
+        }
     }
 
     @GetMapping("/url/{bucketName}/{fileName}")
-    @PreAuthorize("hasRole('DOCTOR') or hasRole('PATIENT') or hasRole('ADMIN')")
-    public ResponseEntity<String> getPublicUrl(
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<?> getPublicUrl(
             @PathVariable String bucketName,
             @PathVariable String fileName) {
 
+        String path = BASE_PATH + "/url/" + bucketName + "/" + fileName;
+        try {
+            StorageSecurity.requireAllowedBucket(bucketName);
+            StorageSecurity.validateFileName(fileName);
+        } catch (IllegalArgumentException e) {
+            return errorResponse(HttpStatus.BAD_REQUEST, e.getMessage(), path);
+        }
+
         String publicUrl = supabaseStorageService.getPublicUrl(bucketName, fileName);
-        return ResponseEntity.ok()
-                .contentType(MediaType.APPLICATION_JSON)
-                .body("{\"url\":\"" + publicUrl + "\"}");
+        return ResponseEntity.ok(new UrlResponse(publicUrl));
+    }
+
+    private static ResponseEntity<Object> errorResponse(HttpStatus status, String message, String path) {
+        ErrorResponseDTO body = ErrorResponseDTO.of(
+                status.getReasonPhrase().toUpperCase().replace(' ', '_'),
+                message, status.value(), path);
+        return ResponseEntity.status(status).body(body);
+    }
+
+    /** URL response DTO (BSEC-H-2: serialized via Jackson, not hand-built JSON). */
+    public record UrlResponse(String url) {
     }
 }

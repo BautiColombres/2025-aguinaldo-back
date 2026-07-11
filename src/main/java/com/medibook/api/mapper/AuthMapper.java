@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class AuthMapper {
 
-    public SignInResponseDTO toSignInResponse(User user, String accessToken, String refreshToken) {
+    public SignInResponseDTO toSignInResponse(User user, String accessToken) {
         return new SignInResponseDTO(
             user.getId(),
             user.getEmail(),
@@ -15,12 +15,11 @@ public class AuthMapper {
             user.getSurname(),
             user.getRole(),
             user.getStatus(),
-            accessToken,
-            refreshToken
+            accessToken
         );
     }
 
     public SignInResponseDTO toSignInResponse(User user) {
-        return toSignInResponse(user, null, null);
+        return toSignInResponse(user, null);
     }
 }

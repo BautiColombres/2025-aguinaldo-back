@@ -2,7 +2,6 @@ package com.medibook.api.controller;
 
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -100,10 +99,12 @@ public class TurnAssignedController {
         }
         
         List<OffsetDateTime> availableTimes = new ArrayList<>();
-        ZoneOffset argentinaOffset = ZoneOffset.of("-03:00");
-        
+
+        // BBUG-L1: derive the offset from the project ARGENTINA_ZONE instead of a hardcoded
+        // "-03:00" literal, so it stays correct across any DST/offset change for the zone.
         for (AvailableSlotDTO slot : availableSlots) {
-            OffsetDateTime slotDateTime = slot.getDate().atTime(slot.getStartTime()).atOffset(argentinaOffset);
+            OffsetDateTime slotDateTime = slot.getDate().atTime(slot.getStartTime())
+                    .atZone(ARGENTINA_ZONE).toOffsetDateTime();
             
             boolean isOccupied = turnAssignedRepository.existsByDoctor_IdAndScheduledAtAndStatusNotCancelled(doctorId, slotDateTime);
             
@@ -194,8 +195,12 @@ public class TurnAssignedController {
             @PathVariable UUID turnId,
             Authentication authentication) {
 
-        User authenticatedUser = (User) authentication.getPrincipal();
-        
+        // BSEC-L-1: null-safe principal — a missing user yields 401 instead of an NPE -> 500.
+        User authenticatedUser = AuthorizationUtil.extractAuthenticatedUser(authentication);
+        if (authenticatedUser == null) {
+            return AuthorizationUtil.createUnauthenticatedResponse();
+        }
+
         if (!"PATIENT".equals(authenticatedUser.getRole()) && !"DOCTOR".equals(authenticatedUser.getRole())) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body("Only patients and doctors can cancel turns");

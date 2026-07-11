@@ -601,7 +601,7 @@ class TurnAssignedServiceTest {
         List<TurnResponseDTO> expectedResponse = Arrays.asList(turnResponse);
 
         when(turnRepo.findByDoctor_IdOrderByScheduledAtDesc(doctorId)).thenReturn(turns);
-        when(mapper.toDTO(turnEntity)).thenReturn(turnResponse);
+        when(mapper.toDTOList(turns)).thenReturn(expectedResponse);
 
         List<TurnResponseDTO> result = turnAssignedService.getTurnsByDoctor(doctorId);
 
@@ -609,7 +609,7 @@ class TurnAssignedServiceTest {
         assertEquals(1, result.size());
         assertEquals(expectedResponse.get(0).getId(), result.get(0).getId());
         verify(turnRepo).findByDoctor_IdOrderByScheduledAtDesc(doctorId);
-        verify(mapper).toDTO(turnEntity);
+        verify(mapper).toDTOList(turns);
     }
 
     @Test
@@ -618,7 +618,7 @@ class TurnAssignedServiceTest {
         List<TurnResponseDTO> expectedResponse = Arrays.asList(turnResponse);
 
         when(turnRepo.findByPatient_IdOrderByScheduledAtDesc(patientId)).thenReturn(turns);
-        when(mapper.toDTO(turnEntity)).thenReturn(turnResponse);
+        when(mapper.toDTOList(turns)).thenReturn(expectedResponse);
 
         List<TurnResponseDTO> result = turnAssignedService.getTurnsByPatient(patientId);
 
@@ -626,7 +626,7 @@ class TurnAssignedServiceTest {
         assertEquals(1, result.size());
         assertEquals(expectedResponse.get(0).getId(), result.get(0).getId());
         verify(turnRepo).findByPatient_IdOrderByScheduledAtDesc(patientId);
-        verify(mapper).toDTO(turnEntity);
+        verify(mapper).toDTOList(turns);
     }
 
     @Test
@@ -636,7 +636,7 @@ class TurnAssignedServiceTest {
         List<TurnResponseDTO> expectedResponse = Arrays.asList(turnResponse);
 
         when(turnRepo.findByDoctor_IdAndStatusOrderByScheduledAtDesc(doctorId, status)).thenReturn(turns);
-        when(mapper.toDTO(turnEntity)).thenReturn(turnResponse);
+        when(mapper.toDTOList(turns)).thenReturn(expectedResponse);
 
         List<TurnResponseDTO> result = turnAssignedService.getTurnsByDoctorAndStatus(doctorId, status);
 
@@ -644,7 +644,7 @@ class TurnAssignedServiceTest {
         assertEquals(1, result.size());
         assertEquals(expectedResponse.get(0).getId(), result.get(0).getId());
         verify(turnRepo).findByDoctor_IdAndStatusOrderByScheduledAtDesc(doctorId, status);
-        verify(mapper).toDTO(turnEntity);
+        verify(mapper).toDTOList(turns);
     }
 
     @Test
@@ -654,7 +654,7 @@ class TurnAssignedServiceTest {
         List<TurnResponseDTO> expectedResponse = Arrays.asList(turnResponse);
 
         when(turnRepo.findByPatient_IdAndStatusOrderByScheduledAtDesc(patientId, status)).thenReturn(turns);
-        when(mapper.toDTO(turnEntity)).thenReturn(turnResponse);
+        when(mapper.toDTOList(turns)).thenReturn(expectedResponse);
 
         List<TurnResponseDTO> result = turnAssignedService.getTurnsByPatientAndStatus(patientId, status);
 
@@ -662,7 +662,7 @@ class TurnAssignedServiceTest {
         assertEquals(1, result.size());
         assertEquals(expectedResponse.get(0).getId(), result.get(0).getId());
         verify(turnRepo).findByPatient_IdAndStatusOrderByScheduledAtDesc(patientId, status);
-        verify(mapper).toDTO(turnEntity);
+        verify(mapper).toDTOList(turns);
     }
 
     @Test

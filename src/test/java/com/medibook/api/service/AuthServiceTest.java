@@ -53,9 +53,11 @@ class AuthServiceTest {
 
     private AuthService authService;
 
+    private static final String TEST_HMAC_KEY = "test-jwt-secret-key-for-testing-purposes-only";
+
     @BeforeEach
     void setUp() {
-        authService = new AuthServiceImpl(userRepository, refreshTokenRepository, passwordEncoder, userMapper, authMapper, emailService, emailVerificationRepository, jwtService);
+        authService = new AuthServiceImpl(userRepository, refreshTokenRepository, passwordEncoder, userMapper, authMapper, emailService, emailVerificationRepository, jwtService, TEST_HMAC_KEY);
     }
 
     @Test
@@ -334,11 +336,18 @@ class AuthServiceTest {
 
     @Test
     void whenSignOut_thenRevokeToken() {
-        String refreshTokenHash = "token-hash";
+        String rawToken = "token-hash";
+        User owner = new User();
+        owner.setId(UUID.randomUUID());
+        RefreshToken token = new RefreshToken();
+        token.setUser(owner);
+        token.setTokenHash(hashToken(rawToken));
+        token.setExpiresAt(ZonedDateTime.now().plusDays(30));
+        when(refreshTokenRepository.findByTokenHash(hashToken(rawToken))).thenReturn(Optional.of(token));
 
-        authService.signOut(refreshTokenHash);
+        authService.signOut(rawToken, owner.getId());
 
-        verify(refreshTokenRepository).revokeTokenByHash(eq(hashToken(refreshTokenHash)), any(ZonedDateTime.class));
+        verify(refreshTokenRepository).revokeTokenByHash(eq(hashToken(rawToken)), any(ZonedDateTime.class));
     }
 
     @Test
@@ -431,10 +440,13 @@ class AuthServiceTest {
         verifyNoMoreInteractions(refreshTokenRepository, authMapper);
     }
 
+    // BSEC-L-2: mirror production hmacToken() — refresh tokens are keyed HMAC-SHA256.
     private String hashToken(String token) {
         try {
-            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(token.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new javax.crypto.spec.SecretKeySpec(
+                    TEST_HMAC_KEY.getBytes(java.nio.charset.StandardCharsets.UTF_8), "HmacSHA256"));
+            byte[] hash = mac.doFinal(token.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(hash);
         } catch (Exception e) {
             throw new RuntimeException(e);

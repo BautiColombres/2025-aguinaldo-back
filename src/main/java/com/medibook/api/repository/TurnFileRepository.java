@@ -13,7 +13,10 @@ import java.util.UUID;
 public interface TurnFileRepository extends JpaRepository<TurnFile, UUID> {
     
     Optional<TurnFile> findByTurnId(UUID turnId);
-    
+
+    // BBUG-L4: batch file lookup for a set of turns (one query instead of one per turn).
+    java.util.List<TurnFile> findByTurnIdIn(java.util.Collection<UUID> turnIds);
+
     boolean existsByTurnId(UUID turnId);
     
     @Modifying

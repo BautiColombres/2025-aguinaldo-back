@@ -18,8 +18,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.OffsetDateTime;
-import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -359,37 +357,30 @@ public class BadgeStatisticsUpdateService {
         }
     }
 
-    private void updateTimeBasedStatistics(UUID userId, Map<String, Object> statistics) {
+    /**
+     * BBUG-L3: recomputes the only aggregate that badge progress actually consumes:
+     * {@code turns_with_same_doctor} for patients (used by PATIENT_CONTINUOUS_FOLLOWUP).
+     *
+     * <p>The previous {@code updateTimeBasedStatistics} also wrote a set of faked "windowed"
+     * keys (turns_last_6_months, turns_last_90_days, last_5_turns_count,
+     * last_10_turns_punctual_count, last_15_turns_collaboration_count,
+     * last_15_turns_follow_instructions_count, cancellations_last_90_days). Those values were
+     * never real windows — they just copied totals or hardcoded 0 — and no badge/progress logic
+     * ever read them, so they were removed as dead code.
+     */
+    private void recomputePatientTurnsWithSameDoctor(UUID userId, Map<String, Object> statistics) {
         try {
             User user = userRepository.findById(userId).orElseThrow();
-            OffsetDateTime now = OffsetDateTime.now(ZoneId.of("America/Argentina/Buenos_Aires"));
 
             if ("PATIENT".equals(user.getRole())) {
-                statistics.put("turns_last_6_months", statistics.getOrDefault("total_turns_completed", 0));
-
-                statistics.put("turns_last_90_days", statistics.getOrDefault("total_turns_completed", 0));
-
-                statistics.put("last_5_turns_count", Math.min((Integer) statistics.getOrDefault("total_turns_completed", 0), 5));
-
                 List<TurnAssigned> allCompletedTurns = turnAssignedRepository.findByPatient_IdAndStatus(userId, "COMPLETED");
                 Map<UUID, Long> turnsByDoctor = allCompletedTurns.stream()
                         .collect(Collectors.groupingBy(turn -> turn.getDoctor().getId(), Collectors.counting()));
                 long maxTurnsWithSameDoctor = turnsByDoctor.values().stream().mapToLong(Long::longValue).max().orElse(0L);
                 statistics.put("turns_with_same_doctor", (int) maxTurnsWithSameDoctor);
-
-                statistics.put("last_10_turns_punctual_count", 0);
-
-                statistics.put("last_15_turns_collaboration_count", 0);
-                statistics.put("last_15_turns_follow_instructions_count", 0);
-
-            } else if ("DOCTOR".equals(user.getRole())) {
-                OffsetDateTime ninetyDaysAgo = now.minusDays(90);
-                statistics.put("turns_last_90_days", statistics.getOrDefault("total_turns_completed", 0));
-                statistics.put("cancellations_last_90_days", statistics.getOrDefault("total_cancellations", 0));
             }
-
         } catch (Exception e) {
-            log.error("Error updating time-based statistics for user {}: {}", userId, e.getMessage());
+            log.error("Error recomputing turns_with_same_doctor for user {}: {}", userId, e.getMessage());
         }
     }
 
@@ -401,7 +392,7 @@ public class BadgeStatisticsUpdateService {
             Map<String, Object> statistics = parseJson(stats.getStatistics());
             Map<String, Object> progress = parseJson(stats.getProgress());
 
-            updateTimeBasedStatistics(userId, statistics);
+            recomputePatientTurnsWithSameDoctor(userId, statistics);
 
             User user = userRepository.findById(userId).orElseThrow();
             Integer totalTurns = (Integer) statistics.getOrDefault("total_turns_completed", 0);
@@ -543,21 +534,6 @@ public class BadgeStatisticsUpdateService {
 
     @Transactional
     public void updateProgressAfterFileUploadSync(UUID userId) {
-        ensureStatisticsExist(userId);
-    }
-
-    @Transactional
-    public void updateAfterPunctualityRatingSync(UUID userId) {
-        ensureStatisticsExist(userId);
-    }
-
-    @Transactional
-    public void updateAfterCollaborationRatingSync(UUID userId) {
-        ensureStatisticsExist(userId);
-    }
-
-    @Transactional
-    public void updateAfterFollowInstructionsRatingSync(UUID userId) {
         ensureStatisticsExist(userId);
     }
 

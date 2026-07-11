@@ -483,4 +483,64 @@ class TurnAssignedMapperTest {
         assertNull(result.getFileName());
         assertNull(result.getUploadedAt());
     }
+
+    // ---- BBUG-L4: batch mapping ----
+
+    @Test
+    void toDTOList_batchLoadsRatingsAndFiles_oneQueryEach_noPerRowLookups() {
+        UUID turnId2 = UUID.randomUUID();
+        TurnAssigned turn2 = TurnAssigned.builder()
+                .id(turnId2)
+                .doctor(doctorUser)
+                .patient(patientUser)
+                .scheduledAt(scheduledDateTime)
+                .status("COMPLETED")
+                .build();
+        turnAssigned.setStatus("COMPLETED");
+
+        when(ratingRepository.findTurnAndRaterIdsByTurnIds(org.mockito.ArgumentMatchers.anyCollection()))
+                .thenReturn(java.util.List.of());
+        when(turnFileService.getTurnFileInfoBatch(org.mockito.ArgumentMatchers.anyCollection()))
+                .thenReturn(java.util.Map.of());
+
+        java.util.List<TurnResponseDTO> result =
+                turnAssignedMapper.toDTOList(java.util.List.of(turnAssigned, turn2));
+
+        assertEquals(2, result.size());
+        // Batch queries used exactly once...
+        org.mockito.Mockito.verify(ratingRepository, org.mockito.Mockito.times(1))
+                .findTurnAndRaterIdsByTurnIds(org.mockito.ArgumentMatchers.anyCollection());
+        org.mockito.Mockito.verify(turnFileService, org.mockito.Mockito.times(1))
+                .getTurnFileInfoBatch(org.mockito.ArgumentMatchers.anyCollection());
+        // ...and NO per-row (N+1) lookups.
+        org.mockito.Mockito.verify(ratingRepository, org.mockito.Mockito.never())
+                .existsByTurnAssigned_IdAndRater_Id(any(), any());
+        org.mockito.Mockito.verify(turnFileService, org.mockito.Mockito.never())
+                .getTurnFileInfo(any());
+    }
+
+    @Test
+    void toDTOList_completedTurn_computesNeedsRatingFromBatch() {
+        turnAssigned.setStatus("COMPLETED");
+        // Patient already rated (present in the batch result); doctor has not.
+        when(ratingRepository.findTurnAndRaterIdsByTurnIds(org.mockito.ArgumentMatchers.anyCollection()))
+                .thenReturn(java.util.List.<Object[]>of(new Object[]{turnId, patientId}));
+        when(turnFileService.getTurnFileInfoBatch(org.mockito.ArgumentMatchers.anyCollection()))
+                .thenReturn(java.util.Map.of());
+
+        java.util.List<TurnResponseDTO> result =
+                turnAssignedMapper.toDTOList(java.util.List.of(turnAssigned));
+
+        assertEquals(1, result.size());
+        assertFalse(result.get(0).getNeedsPatientRating(), "patient already rated");
+        assertTrue(result.get(0).getNeedsDoctorRating(), "doctor has not rated");
+    }
+
+    @Test
+    void toDTOList_empty_returnsEmpty_withoutQueries() {
+        java.util.List<TurnResponseDTO> result = turnAssignedMapper.toDTOList(java.util.List.of());
+
+        assertTrue(result.isEmpty());
+        org.mockito.Mockito.verifyNoInteractions(ratingRepository, turnFileService);
+    }
 }

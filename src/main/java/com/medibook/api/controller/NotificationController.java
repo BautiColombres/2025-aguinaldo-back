@@ -38,6 +38,9 @@ public class NotificationController {
             HttpServletRequest request) {
 
         User authenticatedUser = (User) request.getAttribute("authenticatedUser");
+        if (authenticatedUser == null) {
+            return com.medibook.api.util.AuthorizationUtil.createUnauthenticatedResponse();
+        }
 
         List<Notification> notifications;
         if (unreadOnly) {
@@ -56,6 +59,9 @@ public class NotificationController {
     @GetMapping("/count")
     public ResponseEntity<Object> getUnreadCount(HttpServletRequest request) {
         User authenticatedUser = (User) request.getAttribute("authenticatedUser");
+        if (authenticatedUser == null) {
+            return com.medibook.api.util.AuthorizationUtil.createUnauthenticatedResponse();
+        }
         long count = notificationService.getUnreadCount(authenticatedUser.getId());
         return ResponseEntity.ok(Map.of("unreadCount", count));
     }
@@ -66,6 +72,9 @@ public class NotificationController {
             HttpServletRequest request) {
 
         User authenticatedUser = (User) request.getAttribute("authenticatedUser");
+        if (authenticatedUser == null) {
+            return com.medibook.api.util.AuthorizationUtil.createUnauthenticatedResponse();
+        }
 
         boolean success = notificationService.markAsRead(notificationId, authenticatedUser.getId());
         if (success) {
@@ -83,6 +92,9 @@ public class NotificationController {
             HttpServletRequest request) {
 
         User authenticatedUser = (User) request.getAttribute("authenticatedUser");
+        if (authenticatedUser == null) {
+            return com.medibook.api.util.AuthorizationUtil.createUnauthenticatedResponse();
+        }
 
         boolean success = notificationService.deleteNotification(notificationId, authenticatedUser.getId());
         if (success) {

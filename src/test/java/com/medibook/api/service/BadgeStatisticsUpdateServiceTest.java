@@ -426,26 +426,9 @@ class BadgeStatisticsUpdateServiceTest {
         verify(statisticsRepository).findByUserId(userId);
     }
 
-    @Test
-    void updateAfterPunctualityRatingSync_EmptyMethod_DoesNothing() {
-        badgeStatisticsUpdateService.updateAfterPunctualityRatingSync(userId);
-        
-        verify(statisticsRepository).findByUserId(userId);
-    }
-
-    @Test
-    void updateAfterCollaborationRatingSync_EmptyMethod_DoesNothing() {
-        badgeStatisticsUpdateService.updateAfterCollaborationRatingSync(userId);
-        
-        verify(statisticsRepository).findByUserId(userId);
-    }
-
-    @Test
-    void updateAfterFollowInstructionsRatingSync_EmptyMethod_DoesNothing() {
-        badgeStatisticsUpdateService.updateAfterFollowInstructionsRatingSync(userId);
-        
-        verify(statisticsRepository).findByUserId(userId);
-    }
+    // BBUG-L3: updateAfterPunctualityRatingSync / updateAfterCollaborationRatingSync /
+    // updateAfterFollowInstructionsRatingSync were dead stub methods (never called in main
+    // code) and were removed, together with their now-empty "EmptyMethod_DoesNothing" tests.
 
     @Test
     void updateAfterTurnCompletedSync_ExceptionThrown_LogsError() {

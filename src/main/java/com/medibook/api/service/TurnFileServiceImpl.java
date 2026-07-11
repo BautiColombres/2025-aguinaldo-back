@@ -220,6 +220,15 @@ public class TurnFileServiceImpl implements TurnFileService {
     }
 
     @Override
+    public java.util.Map<UUID, TurnFile> getTurnFileInfoBatch(java.util.Collection<UUID> turnIds) {
+        if (turnIds == null || turnIds.isEmpty()) {
+            return java.util.Map.of();
+        }
+        return turnFileRepository.findByTurnIdIn(turnIds).stream()
+                .collect(java.util.stream.Collectors.toMap(TurnFile::getTurnId, f -> f, (a, b) -> a));
+    }
+
+    @Override
     public boolean fileExistsForTurn(UUID turnId) {
         return turnFileRepository.existsByTurnId(turnId);
     }

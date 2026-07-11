@@ -171,31 +171,20 @@ public class TurnAssignedService {
     }
 
     public List<TurnResponseDTO> getTurnsByDoctor(UUID doctorId) {
-        List<TurnAssigned> turns = turnRepo.findByDoctor_IdOrderByScheduledAtDesc(doctorId);
-        return turns.stream()
-                .map(mapper::toDTO)
-                .collect(Collectors.toList());
+        // BBUG-L4: batch mapping avoids per-turn rating/file lookups (N+1).
+        return mapper.toDTOList(turnRepo.findByDoctor_IdOrderByScheduledAtDesc(doctorId));
     }
-    
+
     public List<TurnResponseDTO> getTurnsByPatient(UUID patientId) {
-        List<TurnAssigned> turns = turnRepo.findByPatient_IdOrderByScheduledAtDesc(patientId);
-        return turns.stream()
-                .map(mapper::toDTO)
-                .collect(Collectors.toList());
+        return mapper.toDTOList(turnRepo.findByPatient_IdOrderByScheduledAtDesc(patientId));
     }
-    
+
     public List<TurnResponseDTO> getTurnsByDoctorAndStatus(UUID doctorId, String status) {
-        List<TurnAssigned> turns = turnRepo.findByDoctor_IdAndStatusOrderByScheduledAtDesc(doctorId, status);
-        return turns.stream()
-                .map(mapper::toDTO)
-                .collect(Collectors.toList());
+        return mapper.toDTOList(turnRepo.findByDoctor_IdAndStatusOrderByScheduledAtDesc(doctorId, status));
     }
-    
+
     public List<TurnResponseDTO> getTurnsByPatientAndStatus(UUID patientId, String status) {
-        List<TurnAssigned> turns = turnRepo.findByPatient_IdAndStatusOrderByScheduledAtDesc(patientId, status);
-        return turns.stream()
-                .map(mapper::toDTO)
-                .collect(Collectors.toList());
+        return mapper.toDTOList(turnRepo.findByPatient_IdAndStatusOrderByScheduledAtDesc(patientId, status));
     }
     
     private final com.medibook.api.repository.TurnModifyRequestRepository turnModifyRequestRepository;

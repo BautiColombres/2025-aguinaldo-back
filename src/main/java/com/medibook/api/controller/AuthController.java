@@ -129,8 +129,17 @@ public class AuthController {
         // Refresh-Token header fallback has been removed). Always clear the cookie so
         // signout is idempotent even when the token is absent.
         String refreshToken = refreshTokenCookieUtil.read(httpRequest).orElse(null);
+        // BBUG-L2: pass the authenticated caller (when the request carries an access token) so
+        // the service can refuse to revoke a refresh token owned by a different user.
+        java.util.UUID callerId = null;
+        var authentication = org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication();
+        if (authentication != null
+                && authentication.getPrincipal() instanceof com.medibook.api.entity.User caller) {
+            callerId = caller.getId();
+        }
         try {
-            authService.signOut(refreshToken);
+            authService.signOut(refreshToken, callerId);
             return ResponseEntity.ok()
                     .header(HttpHeaders.SET_COOKIE, refreshTokenCookieUtil.clear().toString())
                     .build();

@@ -115,4 +115,24 @@ public class NotificationService {
         );
         createNotification(doctorId, NotificationType.TURN_RESERVED, turnId, message);
     }
+
+    /**
+     * One-shot follow-up reminder notification for the DOCTOR (F2 / OQ-2).
+     * HARD PHI RULE: generic / id-only copy — it MUST NOT embed the clinical
+     * tag/motive.
+     */
+    public void createFollowUpScheduledDoctorNotification(UUID doctorId, UUID reminderId) {
+        createNotification(doctorId, NotificationType.FOLLOWUP_SCHEDULED, reminderId,
+            "Recordatorio de control agendado para un paciente");
+    }
+
+    /**
+     * One-shot follow-up reminder notification for the PATIENT (F2 / OQ-2).
+     * HARD PHI RULE: generic / id-only copy — it MUST NOT embed the clinical
+     * tag/motive.
+     */
+    public void createFollowUpScheduledPatientNotification(UUID patientId, UUID reminderId) {
+        createNotification(patientId, NotificationType.FOLLOWUP_SCHEDULED, reminderId,
+            "Tu profesional te recomienda un control");
+    }
 }

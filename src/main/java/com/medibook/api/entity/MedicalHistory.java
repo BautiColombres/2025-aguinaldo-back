@@ -23,6 +23,12 @@ import static com.medibook.api.util.DateTimeUtils.ARGENTINA_ZONE;
 @AllArgsConstructor
 @Builder
 @Table(name = "medical_history")
+// Class-level batching of LAZY MedicalHistory proxies (up to 32 per select):
+// collapses the N+1 when a list of rows each lazily loads its medicalHistory
+// (e.g. the follow-up "due" panel — F2). Read-only optimization: results are
+// unchanged, only the query count drops. Field-level @BatchSize is not allowed
+// on @ManyToOne, so the batch hint lives on the target entity.
+@org.hibernate.annotations.BatchSize(size = 32)
 public class MedicalHistory {
     
     @Id

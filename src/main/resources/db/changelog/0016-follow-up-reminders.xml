@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog
+        xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:schemaLocation="
+          http://www.liquibase.org/xml/ns/dbchangelog
+          https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
+
+    <!--
+      Follow-up reminders ("control en X meses") — F2 / OQ-2 + OQ-4.
+      One row per doctor-created reminder tied to a medical-history entry. The
+      reminder is live-computed into the doctor's "due" panel; there is NO
+      scheduled job, NO overdue concept and reminders never auto-expire (they
+      persist until the patient books a future turn — filtered live — or the
+      doctor dismisses).
+
+      INVARIANT: the JPA mapping in entity/FollowUpReminder.java MUST use exactly
+      @Table(name = "follow_up_reminders") and the @Column names below. H2 tests
+      skip Liquibase (Hibernate-generated schema), so a name mismatch here would
+      pass every H2 test and only break on Postgres — the e2e is the real gate.
+    -->
+    <changeSet id="0016-01-follow-up-reminders" author="MediBook_Agent">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="follow_up_reminders"/>
+            </not>
+        </preConditions>
+
+        <createTable tableName="follow_up_reminders">
+            <column name="id" type="uuid">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="medical_history_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="patient_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="doctor_id" type="uuid">
+                <constraints nullable="false"/>
+            </column>
+            <column name="months_until_control" type="int">
+                <constraints nullable="false"/>
+            </column>
+            <column name="scheduled_for" type="date">
+                <constraints nullable="false"/>
+            </column>
+            <column name="dismissed" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="timestamp">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <addForeignKeyConstraint baseTableName="follow_up_reminders"
+                                 baseColumnNames="medical_history_id"
+                                 constraintName="fk_follow_up_reminders_history"
+                                 referencedTableName="medical_history"
+                                 referencedColumnNames="id"
+                                 onDelete="CASCADE"/>
+
+        <addForeignKeyConstraint baseTableName="follow_up_reminders"
+                                 baseColumnNames="patient_id"
+                                 constraintName="fk_follow_up_reminders_patient"
+                                 referencedTableName="users"
+                                 referencedColumnNames="id"/>
+
+        <addForeignKeyConstraint baseTableName="follow_up_reminders"
+                                 baseColumnNames="doctor_id"
+                                 constraintName="fk_follow_up_reminders_doctor"
+                                 referencedTableName="users"
+                                 referencedColumnNames="id"/>
+
+        <!-- Supports the doctor "due" panel query
+             (doctor_id + dismissed=false + scheduled_for <= today). -->
+        <createIndex indexName="idx_follow_up_reminders_doctor_due"
+                     tableName="follow_up_reminders">
+            <column name="doctor_id"/>
+            <column name="dismissed"/>
+            <column name="scheduled_for"/>
+        </createIndex>
+
+        <!-- Supports the patient-owned read (patient's own non-dismissed reminders). -->
+        <createIndex indexName="idx_follow_up_reminders_patient"
+                     tableName="follow_up_reminders">
+            <column name="patient_id"/>
+        </createIndex>
+    </changeSet>
+
+</databaseChangeLog>

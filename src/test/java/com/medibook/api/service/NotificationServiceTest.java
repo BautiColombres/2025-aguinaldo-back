@@ -85,6 +85,52 @@ class NotificationServiceTest {
     }
 
     @Test
+    void createFollowUpScheduledDoctorNotification_isGenericNoPHI() {
+        UUID doctorId = testUser.getId();
+        UUID reminderId = UUID.randomUUID();
+        org.mockito.ArgumentCaptor<Notification> captor =
+                org.mockito.ArgumentCaptor.forClass(Notification.class);
+        when(userRepository.findById(doctorId)).thenReturn(Optional.of(testUser));
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        notificationService.createFollowUpScheduledDoctorNotification(doctorId, reminderId);
+
+        verify(notificationRepository).save(captor.capture());
+        Notification saved = captor.getValue();
+        assertEquals(NotificationType.FOLLOWUP_SCHEDULED, saved.getType());
+        assertEquals(reminderId, saved.getRelatedEntityId());
+        assertNoClinicalPhi(saved.getMessage());
+    }
+
+    @Test
+    void createFollowUpScheduledPatientNotification_isGenericNoPHI() {
+        UUID patientId = testUser.getId();
+        UUID reminderId = UUID.randomUUID();
+        org.mockito.ArgumentCaptor<Notification> captor =
+                org.mockito.ArgumentCaptor.forClass(Notification.class);
+        when(userRepository.findById(patientId)).thenReturn(Optional.of(testUser));
+        when(notificationRepository.save(any(Notification.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        notificationService.createFollowUpScheduledPatientNotification(patientId, reminderId);
+
+        verify(notificationRepository).save(captor.capture());
+        Notification saved = captor.getValue();
+        assertEquals(NotificationType.FOLLOWUP_SCHEDULED, saved.getType());
+        assertEquals(reminderId, saved.getRelatedEntityId());
+        assertNoClinicalPhi(saved.getMessage());
+    }
+
+    private void assertNoClinicalPhi(String message) {
+        assertNotNull(message);
+        assertFalse(message.isBlank());
+        // Must never embed the clinical tag/motive text (PHI hard rule).
+        String lower = message.toLowerCase();
+        assertFalse(lower.contains("diabetes"));
+        assertFalse(lower.contains("motivo"));
+        assertFalse(lower.contains("etiqueta"));
+    }
+
+    @Test
     void testGetUnreadNotifications() {
         List<Notification> expectedNotifications = List.of(testNotification);
         when(notificationRepository.findByUserIdAndIsReadFalseOrderByCreatedAtDesc(testUser.getId()))

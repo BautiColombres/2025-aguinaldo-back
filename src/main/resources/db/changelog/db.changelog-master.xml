@@ -21,5 +21,6 @@
     <include file="0013-reconcile-cancellation-stat-key.xml" relativeToChangelogFile="true"/>
     <include file="0014-standardize-canceled-status.xml" relativeToChangelogFile="true"/>
     <include file="0015-medical-history-tags.xml" relativeToChangelogFile="true"/>
+    <include file="0016-follow-up-reminders.xml" relativeToChangelogFile="true"/>
 
 </databaseChangeLog>

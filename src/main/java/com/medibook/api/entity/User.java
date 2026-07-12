@@ -17,6 +17,12 @@ import lombok.Setter;
 @Getter
 @Setter
 @Table(name = "users")
+// Class-level batching of LAZY User proxies (up to 32 per select). Collapses the
+// N+1 when a list of rows each lazily loads its patient/doctor User (e.g. the
+// follow-up "due" panel — F2). Read-only optimization: results are unchanged, only
+// the query count drops. Field-level @BatchSize is not allowed on @ManyToOne, so
+// the batch hint lives on the target entity.
+@org.hibernate.annotations.BatchSize(size = 32)
 public class User {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)

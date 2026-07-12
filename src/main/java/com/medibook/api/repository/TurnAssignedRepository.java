@@ -34,6 +34,17 @@ public interface TurnAssignedRepository extends JpaRepository<TurnAssigned, UUID
 
     @Query("SELECT COUNT(t) > 0 FROM TurnAssigned t WHERE t.doctor.id = :doctorId AND t.patient.id = :patientId AND t.status NOT IN ('CANCELED', 'NO_SHOW')")
     boolean existsActiveRelationship(@Param("doctorId") UUID doctorId, @Param("patientId") UUID patientId);
+
+    /**
+     * True when the patient has a FUTURE (after {@code now}) active — non-cancelled /
+     * non-no-show — turn with this doctor. Used by the follow-up "due" panel to
+     * live-filter out patients who already have an upcoming turn (F2 / OQ-4).
+     * Note the deliberate type split: turn {@code scheduledAt} is an
+     * {@code OffsetDateTime}; the reminder's {@code scheduled_for} is a
+     * {@code LocalDate}.
+     */
+    @Query("SELECT COUNT(t) > 0 FROM TurnAssigned t WHERE t.doctor.id = :doctorId AND t.patient.id = :patientId AND t.scheduledAt > :now AND t.status NOT IN ('CANCELED', 'NO_SHOW')")
+    boolean existsFutureActiveTurn(@Param("doctorId") UUID doctorId, @Param("patientId") UUID patientId, @Param("now") OffsetDateTime now);
     
     List<TurnAssigned> findByPatient_IdAndStatusAndScheduledAtAfter(UUID patientId, String status, OffsetDateTime scheduledAt);
     

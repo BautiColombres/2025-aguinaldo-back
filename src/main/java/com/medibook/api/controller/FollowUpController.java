@@ -1,6 +1,7 @@
 package com.medibook.api.controller;
 
 import com.medibook.api.dto.CreateFollowUpReminderRequestDTO;
+import com.medibook.api.dto.DueForFollowUpDTO;
 import com.medibook.api.dto.FollowUpReminderDTO;
 import com.medibook.api.service.FollowUpReminderService;
 import jakarta.validation.Valid;
@@ -52,6 +53,16 @@ public class FollowUpController {
             Authentication authentication) {
 
         return ResponseEntity.ok(followUpReminderService.getDueReminders(authentication, doctorId));
+    }
+
+    @GetMapping("/api/doctors/{doctorId}/patients/due-for-followup")
+    @PreAuthorize("hasRole('DOCTOR')")
+    public ResponseEntity<List<DueForFollowUpDTO>> getPatientsDueForFollowUp(
+            @PathVariable UUID doctorId,
+            Authentication authentication) {
+
+        return ResponseEntity.ok(
+                followUpReminderService.getPatientsDueForFollowUp(authentication, doctorId));
     }
 
     @PutMapping("/api/doctors/{doctorId}/followups/{reminderId}/dismiss")

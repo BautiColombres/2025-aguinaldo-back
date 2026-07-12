@@ -191,6 +191,39 @@ class FollowUpControllerTest {
                 .andExpect(status().isForbidden());
     }
 
+    // ---- GET due-for-followup panel (F3) ----
+
+    @Test
+    void dueForFollowup_ownerDoctor_returnsOnlyOwnDuePatients() throws Exception {
+        mockMvc.perform(get("/api/doctors/" + ownerDoctor.getId() + "/patients/due-for-followup")
+                        .header("Authorization", "Bearer " + ownerDoctorToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].patientId").value(patient.getId().toString()))
+                .andExpect(jsonPath("$[0].scheduledFor").exists())
+                .andExpect(jsonPath("$[0].lastTurnDate").exists())
+                .andExpect(jsonPath("$[0].monthsOverdue").doesNotExist());
+    }
+
+    @Test
+    void dueForFollowup_foreignDoctorId_returns403() throws Exception {
+        mockMvc.perform(get("/api/doctors/" + otherDoctor.getId() + "/patients/due-for-followup")
+                        .header("Authorization", "Bearer " + ownerDoctorToken))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void dueForFollowup_patientRole_returns403() throws Exception {
+        mockMvc.perform(get("/api/doctors/" + patient.getId() + "/patients/due-for-followup")
+                        .header("Authorization", "Bearer " + patientToken))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void dueForFollowup_anonymous_returns401() throws Exception {
+        mockMvc.perform(get("/api/doctors/" + ownerDoctor.getId() + "/patients/due-for-followup"))
+                .andExpect(status().isUnauthorized());
+    }
+
     // ---- PUT dismiss ----
 
     @Test

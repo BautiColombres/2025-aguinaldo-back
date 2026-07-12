@@ -1,5 +1,6 @@
 package com.medibook.api.service;
 
+import com.medibook.api.dto.DueForFollowUpDTO;
 import com.medibook.api.dto.FollowUpReminderDTO;
 import com.medibook.api.entity.FollowUpReminder;
 import com.medibook.api.entity.MedicalHistory;
@@ -151,6 +152,45 @@ public class FollowUpReminderService {
                         doctorId, r.getPatient().getId(), now))
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * F3 "pacientes que deben volver" panel. DELEGATES to {@link #getDueReminders}
+     * for the base "due + no future turn" set (that filter — and the service-side
+     * authz + single READ audit — live in exactly ONE place). The panel lists
+     * PATIENTS (not reminders), so a patient with more than one active due reminder
+     * appears at most ONCE: rows are deduped by {@code patientId}, keeping the
+     * reminder with the earliest (soonest) {@code scheduledFor} — the nearest
+     * recommended return date. The final list is ordered by {@code scheduledFor}
+     * ascending. Each row is enriched with {@code lastTurnDate} (the patient's
+     * most-recent COMPLETED turn with this doctor). NO overdue computation (OQ-4);
+     * {@code lastTurnDate} may be {@code null}.
+     */
+    public List<DueForFollowUpDTO> getPatientsDueForFollowUp(Authentication authentication, UUID doctorId) {
+        return getDueReminders(authentication, doctorId).stream()
+                .collect(Collectors.toMap(
+                        FollowUpReminderDTO::getPatientId,
+                        r -> r,
+                        (a, b) -> a.getScheduledFor().isAfter(b.getScheduledFor()) ? b : a,
+                        java.util.LinkedHashMap::new))
+                .values()
+                .stream()
+                .map(r -> DueForFollowUpDTO.builder()
+                        .patientId(r.getPatientId())
+                        .patientName(r.getPatientName())
+                        .patientSurname(r.getPatientSurname())
+                        .scheduledFor(r.getScheduledFor())
+                        .lastTurnDate(lastCompletedTurnDate(doctorId, r.getPatientId()))
+                        .build())
+                .sorted(java.util.Comparator.comparing(DueForFollowUpDTO::getScheduledFor))
+                .collect(Collectors.toList());
+    }
+
+    private OffsetDateTime lastCompletedTurnDate(UUID doctorId, UUID patientId) {
+        return turnAssignedRepository
+                .findFirstByDoctor_IdAndPatient_IdAndStatusOrderByScheduledAtDesc(doctorId, patientId, "COMPLETED")
+                .map(com.medibook.api.entity.TurnAssigned::getScheduledAt)
+                .orElse(null);
     }
 
     /**

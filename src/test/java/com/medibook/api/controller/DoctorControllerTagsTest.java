@@ -37,9 +37,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * F1-B5: GET /api/doctors/{doctorId}/patients/{patientId}/tags — coarse gate
- * hasRole('DOCTOR'); fine ownership + DENY audit enforced in the service (OQ-8a).
- * Also covers tags carried on create/update and OQ-6 validation (400).
+ * GET /api/doctors/{doctorId}/patients/{patientId}/tags — coarse gate
+ * hasRole('DOCTOR'); fine ownership + DENY audit enforced in the service.
+ * Also covers tags carried on create/update and tag validation (400).
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -151,7 +151,7 @@ class DoctorControllerTagsTest {
 
     @Test
     void admin_getTags_returns403_coarseGateIsDoctorOnly() throws Exception {
-        // The endpoint is per-doctor scoped (OQ-5) and coarse-gated to DOCTOR only;
+        // The endpoint is per-doctor scoped and coarse-gated to DOCTOR only;
         // admin has no DOCTOR role so it is rejected at the gate.
         mockMvc.perform(get("/api/doctors/" + relatedDoctor.getId()
                         + "/patients/" + patient.getId() + "/tags")

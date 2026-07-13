@@ -171,7 +171,7 @@ public class TurnAssignedService {
     }
 
     public List<TurnResponseDTO> getTurnsByDoctor(UUID doctorId) {
-        // BBUG-L4: batch mapping avoids per-turn rating/file lookups (N+1).
+        // Batch mapping avoids per-turn rating/file lookups (N+1).
         return mapper.toDTOList(turnRepo.findByDoctor_IdOrderByScheduledAtDesc(doctorId));
     }
 
@@ -224,7 +224,7 @@ public class TurnAssignedService {
             badgeEvaluationTrigger.evaluateAfterTurnCancellation(turn.getPatient().getId());
         }
         
-        // BBUG-H4: never block a reactive chain from here. File cleanup on cancel is
+        // Never block a reactive chain from here. File cleanup on cancel is
         // best-effort — offload the whole reactive delete onto a bounded scheduler and
         // subscribe (fire-and-forget) instead of calling .block() on the caller thread.
         // Success/failure are logged; cancellation succeeds regardless of file cleanup.
@@ -431,7 +431,7 @@ public class TurnAssignedService {
             throw new RuntimeException("Cannot rate canceled turns");
         }
 
-        // BBUG-M3: use the project timezone (ARGENTINA_ZONE) instead of the JVM default
+        // Use the project timezone (ARGENTINA_ZONE) instead of the JVM default
         // so the "turn has already occurred" check is evaluated against a well-defined zone.
         OffsetDateTime now = OffsetDateTime.now(ARGENTINA_ZONE);
         if (turn.getScheduledAt().isAfter(now)) {

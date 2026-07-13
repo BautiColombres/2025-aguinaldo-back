@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * BSEC-H-3 — asserts that the committed application.properties contains NO
+ * Asserts that the committed application.properties contains NO
  * weak/literal secret defaults. Secrets must be referenced via env/placeholder
  * only (no {@code :default}) so a missing value fails fast instead of silently
  * falling back to a committed credential. Also asserts the inert in-memory

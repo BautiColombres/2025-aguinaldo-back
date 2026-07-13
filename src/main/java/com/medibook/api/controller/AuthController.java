@@ -105,8 +105,6 @@ public class AuthController {
             HttpServletRequest httpRequest) {
         try {
             SignInResultDTO result = authService.signIn(request);
-            // FSEC-H1 Stage 3: the refresh token travels ONLY via the httpOnly cookie.
-            // It is never placed in the JSON body (closes the XSS/body-exposure surface).
             return ResponseEntity.ok()
                     .header(HttpHeaders.SET_COOKIE,
                             refreshTokenCookieUtil.build(result.refreshToken()).toString())
@@ -125,12 +123,9 @@ public class AuthController {
 
     @PostMapping("/signout")
     public ResponseEntity<?> signOut(HttpServletRequest httpRequest) {
-        // FSEC-H1 Stage 3: read the refresh token ONLY from the httpOnly cookie (the
-        // Refresh-Token header fallback has been removed). Always clear the cookie so
-        // signout is idempotent even when the token is absent.
         String refreshToken = refreshTokenCookieUtil.read(httpRequest).orElse(null);
-        // BBUG-L2: pass the authenticated caller (when the request carries an access token) so
-        // the service can refuse to revoke a refresh token owned by a different user.
+        // Pass the authenticated caller so the service can refuse to revoke a
+        // refresh token owned by a different user.
         java.util.UUID callerId = null;
         var authentication = org.springframework.security.core.context.SecurityContextHolder
                 .getContext().getAuthentication();
@@ -156,8 +151,6 @@ public class AuthController {
 
     @PostMapping("/refresh-token")
     public ResponseEntity<?> refreshToken(HttpServletRequest httpRequest) {
-        // FSEC-H1 Stage 3: read the refresh token ONLY from the httpOnly cookie (the
-        // Refresh-Token header fallback has been removed). Missing cookie -> 401.
         String refreshToken = refreshTokenCookieUtil.read(httpRequest).orElse(null);
         if (refreshToken == null) {
             ErrorResponseDTO error = ErrorResponseDTO.of(
@@ -170,7 +163,6 @@ public class AuthController {
         }
         try {
             SignInResultDTO result = authService.refreshToken(refreshToken);
-            // Rotate the cookie with the freshly-minted raw refresh token (cookie-only).
             return ResponseEntity.ok()
                     .header(HttpHeaders.SET_COOKIE,
                             refreshTokenCookieUtil.build(result.refreshToken()).toString())

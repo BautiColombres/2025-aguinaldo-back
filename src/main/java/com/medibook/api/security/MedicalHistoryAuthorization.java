@@ -47,8 +47,8 @@ public class MedicalHistoryAuthorization {
     }
 
     /**
-     * Service-layer / programmatic check (defense in depth): a doctor may only
-     * read a patient's history when an active relationship exists.
+     * Service-layer check: a doctor may only read a patient's history when an
+     * active relationship exists.
      */
     public boolean doctorHasActiveRelationship(UUID doctorId, UUID patientId) {
         return hasActiveRelationship(doctorId, patientId);

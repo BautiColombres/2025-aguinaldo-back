@@ -39,13 +39,13 @@ public class DoctorService {
 
     public List<DoctorDTO> getAllDoctors() {
         List<User> doctors = userRepository.findDoctorsByStatus("ACTIVE");
-        // BBUG-L4: batch mapping avoids one badge query per doctor.
+        // Batch mapping avoids one badge query per doctor.
         return doctorMapper.toDTOList(doctors);
     }
 
     public List<DoctorDTO> getDoctorsBySpecialty(String specialty) {
         List<User> doctors = userRepository.findDoctorsByStatusAndSpecialty("ACTIVE", specialty);
-        // BBUG-L4: batch mapping avoids one badge query per doctor.
+        // Batch mapping avoids one badge query per doctor.
         return doctorMapper.toDTOList(doctors);
     }
 

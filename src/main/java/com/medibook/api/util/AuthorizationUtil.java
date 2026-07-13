@@ -64,10 +64,10 @@ public class AuthorizationUtil {
     }
 
     /**
-     * BSEC-L-1: generic 401 for the case where the authenticated principal is missing
+     * Generic 401 for the case where the authenticated principal is missing
      * (e.g. {@code Authentication} is {@code null} or its principal is not a {@link User}).
      * Returning a consistent {@code UNAUTHORIZED} body avoids dereferencing a null principal
-     * (NPE -> 500) and matches the BSEC-M-3 generic-message style.
+     * (NPE -> 500).
      */
     public static ResponseEntity<Object> createUnauthenticatedResponse() {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
@@ -75,7 +75,7 @@ public class AuthorizationUtil {
     }
 
     /**
-     * BSEC-L-1: null-safe extraction of the authenticated {@link User} from the standard
+     * Null-safe extraction of the authenticated {@link User} from the standard
      * {@code SecurityContext} principal. Returns {@code null} when there is no authenticated
      * user (instead of throwing), so callers can respond with a 401 rather than a 500.
      */

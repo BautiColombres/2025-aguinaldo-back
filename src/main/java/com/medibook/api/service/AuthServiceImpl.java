@@ -48,7 +48,7 @@ class AuthServiceImpl implements AuthService {
     private final EmailVerificationRepository emailVerificationRepository;
     private final JwtService jwtService;
 
-    // BSEC-L-2: server-side key used to HMAC refresh tokens before persisting them.
+    // Server-side key used to HMAC refresh tokens before persisting them.
     private final String refreshTokenHmacKey;
     private static final String HMAC_ALGORITHM = "HmacSHA256";
 
@@ -293,8 +293,6 @@ class AuthServiceImpl implements AuthService {
 
         String accessToken = generateAccessToken(user);
 
-        // FSEC-H1 Stage 3: the raw refresh token is returned separately (for the httpOnly
-        // cookie), NEVER inside the SignInResponseDTO body.
         return new SignInResultDTO(authMapper.toSignInResponse(user, accessToken), rawToken);
     }
 
@@ -316,7 +314,7 @@ class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public void signOut(String rawRefreshToken, UUID callerId) {
-        // BBUG-L2: a missing token is a logged no-op (do NOT silently swallow it).
+        // A missing token is a logged no-op (do NOT silently swallow it).
         if (rawRefreshToken == null || rawRefreshToken.isBlank()) {
             log.warn("Sign-out requested with no refresh token; nothing to revoke");
             return;
@@ -325,7 +323,7 @@ class AuthServiceImpl implements AuthService {
         String hashedToken = hmacToken(rawRefreshToken);
         Optional<RefreshToken> tokenOpt = refreshTokenRepository.findByTokenHash(hashedToken);
 
-        // BBUG-L2: no matching row -> logged no-op (token never issued, already deleted, or invalid).
+        // No matching row -> logged no-op (token never issued, already deleted, or invalid).
         if (tokenOpt.isEmpty()) {
             log.warn("Sign-out: no refresh token matched the presented credential; nothing to revoke");
             return;
@@ -333,7 +331,7 @@ class AuthServiceImpl implements AuthService {
 
         RefreshToken token = tokenOpt.get();
 
-        // BBUG-L2: ownership check — a caller must not be able to revoke another user's token.
+        // Ownership check — a caller must not be able to revoke another user's token.
         UUID ownerId = token.getUser() != null ? token.getUser().getId() : null;
         if (callerId != null && ownerId != null && !callerId.equals(ownerId)) {
             log.warn("Sign-out: caller {} attempted to revoke a refresh token owned by user {}; ignored",
@@ -378,7 +376,6 @@ class AuthServiceImpl implements AuthService {
         
         refreshTokenRepository.revokeTokenByHash(hashedInputToken, ZonedDateTime.now(ARGENTINA_ZONE));
 
-        // FSEC-H1 Stage 3: rotated raw refresh token travels via the cookie only.
         return new SignInResultDTO(authMapper.toSignInResponse(user, newAccessToken), newRawToken);
     }
 
@@ -471,7 +468,7 @@ class AuthServiceImpl implements AuthService {
     }
 
     /**
-     * BSEC-L-2: keyed HMAC-SHA256 of a refresh token. Unlike a bare SHA-256, an attacker who
+     * Keyed HMAC-SHA256 of a refresh token. Unlike a bare SHA-256, an attacker who
      * leaks the token_hash column cannot precompute/reverse tokens without the server-side
      * key. The raw and hashed tokens are never logged. Deterministic for a given (key, token).
      */

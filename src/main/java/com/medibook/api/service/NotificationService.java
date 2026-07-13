@@ -117,7 +117,7 @@ public class NotificationService {
     }
 
     /**
-     * One-shot follow-up reminder notification for the DOCTOR (F2 / OQ-2).
+     * One-shot follow-up reminder notification for the DOCTOR.
      * HARD PHI RULE: generic / id-only copy — it MUST NOT embed the clinical
      * tag/motive.
      */
@@ -127,7 +127,7 @@ public class NotificationService {
     }
 
     /**
-     * One-shot follow-up reminder notification for the PATIENT (F2 / OQ-2).
+     * One-shot follow-up reminder notification for the PATIENT.
      * HARD PHI RULE: generic / id-only copy — it MUST NOT embed the clinical
      * tag/motive.
      */

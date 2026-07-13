@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.*;
 
 /**
- * BSEC-L-1: a missing "authenticatedUser" request attribute must yield 401, never an
+ * A missing "authenticatedUser" request attribute must yield 401, never an
  * NPE -> 500 when the notification endpoints dereference the principal.
  */
 @ExtendWith(MockitoExtension.class)

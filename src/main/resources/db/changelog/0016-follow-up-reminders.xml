@@ -7,7 +7,7 @@
           https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
 
     <!--
-      Follow-up reminders ("control en X meses") — F2 / OQ-2 + OQ-4.
+      Follow-up reminders ("control en X meses").
       One row per doctor-created reminder tied to a medical-history entry. The
       reminder is live-computed into the doctor's "due" panel; there is NO
       scheduled job, NO overdue concept and reminders never auto-expire (they

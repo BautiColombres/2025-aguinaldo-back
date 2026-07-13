@@ -7,7 +7,7 @@ import lombok.NoArgsConstructor;
 
 /**
  * A single consultation tag with how many times the requesting doctor has
- * applied it to a given patient (per-patient, per-doctor scope — OQ-5).
+ * applied it to a given patient (per-patient, per-doctor scope).
  */
 @Data
 @Builder

@@ -19,7 +19,7 @@ public interface AuthService {
     SignInResultDTO signIn(SignInRequestDTO request);
 
     /**
-     * BBUG-L2: revokes the given refresh token. {@code callerId} is the id of the
+     * Revokes the given refresh token. {@code callerId} is the id of the
      * authenticated user performing the sign-out (or {@code null} when the request carries
      * no access token). When present, the token is only revoked if it belongs to that
      * caller — a caller cannot revoke another user's token.

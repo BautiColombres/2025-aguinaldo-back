@@ -118,7 +118,7 @@ class FollowUpReminderServiceTest {
         verify(followUpReminderRepository).save(captor.capture());
         FollowUpReminder saved = captor.getValue();
 
-        // scheduled_for = turn visit date + months (OQ-7), NOT history.createdAt.
+        // scheduled_for = turn visit date + months, NOT history.createdAt.
         assertEquals(LocalDate.of(2025, 4, 15), saved.getScheduledFor());
         assertEquals(patientId, saved.getPatient().getId());
         assertEquals(doctorId, saved.getDoctor().getId());
@@ -235,11 +235,11 @@ class FollowUpReminderServiceTest {
                 .findByDoctor_IdAndDismissedFalseAndScheduledForLessThanEqual(any(), any());
     }
 
-    // ---- getPatientsDueForFollowUp (F3) ----
+    // ---- getPatientsDueForFollowUp ----
 
     @Test
     void getPatientsDueForFollowUp_delegatesToDueReminders_excludesFutureActiveTurnPatient() {
-        // F3 composes on getDueReminders: the no-future-turn filter lives ONLY inside
+        // getPatientsDueForFollowUp composes on getDueReminders: the no-future-turn filter lives ONLY inside
         // getDueReminders, so a patient with a future active turn is excluded via
         // delegation (NOT a second filter here).
         User patientB = new User();
@@ -389,7 +389,7 @@ class FollowUpReminderServiceTest {
 
     @Test
     void dueForFollowUpDTO_hasNoOverdueField() {
-        // OQ-4: the panel DTO must carry NO overdue/monthsOverdue/severity concept.
+        // The panel DTO must carry NO overdue/monthsOverdue/severity concept.
         var fieldNames = java.util.Arrays.stream(DueForFollowUpDTO.class.getDeclaredFields())
                 .map(java.lang.reflect.Field::getName)
                 .collect(java.util.stream.Collectors.toSet());
@@ -432,7 +432,7 @@ class FollowUpReminderServiceTest {
     void dismissReminder_crossDoctorReminder_notFoundEmitsIdOnlyDenyAudit() {
         // Coarse principal.id == doctorId passes, but the reminder belongs to
         // ANOTHER doctor so the ownership-scoped lookup is empty. A cross-doctor
-        // dismiss must emit exactly one id-only DENY audit (no PHI) before 404 (OQ-8a).
+        // dismiss must emit exactly one id-only DENY audit (no PHI) before 404.
         UUID reminderId = UUID.randomUUID();
         when(followUpReminderRepository.findByIdAndDoctor_Id(reminderId, doctorId))
                 .thenReturn(Optional.empty());

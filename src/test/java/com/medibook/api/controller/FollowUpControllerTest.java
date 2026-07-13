@@ -191,7 +191,7 @@ class FollowUpControllerTest {
                 .andExpect(status().isForbidden());
     }
 
-    // ---- GET due-for-followup panel (F3) ----
+    // ---- GET due-for-followup panel ----
 
     @Test
     void dueForFollowup_ownerDoctor_returnsOnlyOwnDuePatients() throws Exception {

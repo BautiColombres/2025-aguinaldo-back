@@ -10,7 +10,7 @@ import java.time.Duration;
 import java.util.Optional;
 
 /**
- * FSEC-H1: builds/reads/clears the httpOnly refresh-token cookie.
+ * Builds/reads/clears the httpOnly refresh-token cookie.
  *
  * <p>The cookie is scoped to {@code Path=/api/auth} so it is only ever sent to the
  * three auth endpoints (signin sets it, refresh-token rotates it, signout clears it).

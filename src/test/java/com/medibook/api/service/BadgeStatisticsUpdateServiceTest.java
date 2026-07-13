@@ -426,7 +426,7 @@ class BadgeStatisticsUpdateServiceTest {
         verify(statisticsRepository).findByUserId(userId);
     }
 
-    // BBUG-L3: updateAfterPunctualityRatingSync / updateAfterCollaborationRatingSync /
+    // updateAfterPunctualityRatingSync / updateAfterCollaborationRatingSync /
     // updateAfterFollowInstructionsRatingSync were dead stub methods (never called in main
     // code) and were removed, together with their now-empty "EmptyMethod_DoesNothing" tests.
 
@@ -1191,7 +1191,7 @@ class BadgeStatisticsUpdateServiceTest {
         assert progress.get("DOCTOR_AGILE_RESPONDER").equals(4 * 100.0 / 7);
     }
 
-    // ----- BBUG-H1: cancellation stat key mismatch -----
+    // ----- cancellation stat key mismatch -----
 
     @Test
     void updateAfterTurnCancelledSync_IncrementsCanonicalTotalCancellationsKey() {
@@ -1240,7 +1240,7 @@ class BadgeStatisticsUpdateServiceTest {
         assert progress.get("DOCTOR_CONSISTENT_PROFESSIONAL").equals(100.0);
     }
 
-    // ----- BBUG-H2: unique-patients counted distinctly, not per-turn -----
+    // ----- unique-patients counted distinctly, not per-turn -----
 
     @Test
     void updateAfterTurnCompletedSync_SamePatientTwice_UniqueCountStaysOne() {

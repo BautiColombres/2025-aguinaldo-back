@@ -72,7 +72,7 @@ class TurnAssignedControllerTest {
                 .andExpect(jsonPath("$.status").value("SCHEDULED"));  // Ahora es SCHEDULED
     }
 
-    // BBUG-M4: a service-layer RuntimeException on create must map to a 4xx, never a 500.
+    // A service-layer RuntimeException on create must map to a 4xx, never a 500.
     @Test
     void createTurn_SlotAlreadyTaken_Conflict() throws Exception {
         // Truncate sub-second precision so the stored value and the slot-conflict query
@@ -99,7 +99,7 @@ class TurnAssignedControllerTest {
                 .andExpect(status().isConflict());
     }
 
-    // BBUG-M4: an UNEXPECTED service RuntimeException (i.e. not the known "slot already
+    // An UNEXPECTED service RuntimeException (i.e. not the known "slot already
     // taken" business case) must NOT be masked as a 400 that echoes the raw internal
     // message. It must propagate so the framework returns a generic 500 (no info leak).
     // A booking against a non-existent doctor makes the service throw "Doctor not found",
@@ -127,7 +127,7 @@ class TurnAssignedControllerTest {
         // Must surface as a server-side (5xx) fault.
         org.junit.jupiter.api.Assertions.assertTrue(status >= 500,
                 "Unexpected service error must surface as a 5xx, was: " + status);
-        // Must NOT leak the raw internal exception message to the client (BSEC-M-3).
+        // Must NOT leak the raw internal exception message to the client.
         org.junit.jupiter.api.Assertions.assertFalse(body.contains("Doctor not found"),
                 "Response must not leak the raw internal exception message, was: " + body);
     }
@@ -162,7 +162,7 @@ class TurnAssignedControllerTest {
                 .andExpect(status().isBadRequest());  // Era 201 Created
     }
 
-    // BSEC-M-5: these lock the authorization outcome of endpoints whose principal source
+    // These lock the authorization outcome of endpoints whose principal source
     // was converted from request.getAttribute("authenticatedUser") to the standard
     // SecurityContext (Authentication#getPrincipal). They run through the real security
     // filter chain, so a wrong-source/wrong-role regression would surface here.

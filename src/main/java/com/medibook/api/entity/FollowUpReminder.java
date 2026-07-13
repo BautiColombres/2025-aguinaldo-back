@@ -15,11 +15,11 @@ import java.util.UUID;
 import static com.medibook.api.util.DateTimeUtils.ARGENTINA_ZONE;
 
 /**
- * A doctor-created "control en X meses" follow-up reminder (F2 / OQ-2 + OQ-4).
+ * A doctor-created "control en X meses" follow-up reminder.
  *
  * <p>All reminder fields are derived server-side from the originating
  * {@link MedicalHistory} entry — never from the request body — so the reminder
- * can never be pointed at an arbitrary patient (IDOR prevention). The reminder
+ * can never be pointed at an arbitrary patient. The reminder
  * is live-computed into the doctor's "due" panel: there is NO scheduled job and
  * NO overdue concept; a reminder never auto-expires and simply persists until
  * the patient books a future turn (filtered out live) or the doctor dismisses it.
@@ -41,11 +41,10 @@ public class FollowUpReminder {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    // N+1: getDueReminders/getRemindersForPatient init these LAZY to-one proxies per
-    // row. Field-level @BatchSize is NOT allowed on @ManyToOne in this Hibernate
-    // version — batching to-one proxies is done at the TARGET-entity class level
+    // Field-level @BatchSize is NOT allowed on @ManyToOne in this Hibernate version;
+    // batching of these to-one proxies is done at the target-entity class level
     // (@BatchSize on User / MedicalHistory), which collapses the per-row proxy inits
-    // into IN-clause loads. Kept LAZY (no EAGER); results unchanged, only query count.
+    // into IN-clause loads.
     @NotNull
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "medical_history_id", nullable = false)

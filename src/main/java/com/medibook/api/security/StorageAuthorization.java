@@ -12,7 +12,7 @@ import java.util.UUID;
 
 /**
  * Custom security-expression bean ({@code @storageAuthz}) for turn-file storage
- * operations (BSEC-H-5). A patient may only upload/delete the file attached to a
+ * operations. A patient may only upload/delete the file attached to a
  * turn they own; admins may operate on any turn.
  */
 @Component("storageAuthz")

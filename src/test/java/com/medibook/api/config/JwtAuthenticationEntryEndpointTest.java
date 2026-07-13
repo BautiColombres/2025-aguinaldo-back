@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
 
 /**
- * BSEC-M-3: the 401 entry point must NEVER reflect the raw exception message
+ * The 401 entry point must NEVER reflect the raw exception message
  * (information disclosure). It must emit a fixed generic body via a serialized object.
  */
 class JwtAuthenticationEntryEndpointTest {

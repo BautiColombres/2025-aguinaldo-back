@@ -13,8 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>This is a deliberately separate Spring bean from {@link TurnFileServiceImpl}
  * (mirroring {@link AuditLogPersister}) so the transaction is honored through a
  * real proxy boundary. A self-invocation inside {@code TurnFileServiceImpl} would
- * bypass the proxy and run with NO transaction at all — which is exactly the
- * BBUG-H4 defect this fix removes.
+ * bypass the proxy and run with NO transaction at all.
  *
  * <p>The blocking JPA write is invoked from a bounded scheduler
  * ({@code Schedulers.boundedElastic()}) by the caller, never from the reactive

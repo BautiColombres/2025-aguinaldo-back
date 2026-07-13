@@ -12,7 +12,7 @@ import java.io.IOException;
 import java.util.Map;
 
 /**
- * BSEC-M-3: returns a fixed, generic 401 body. The raw {@link AuthenticationException}
+ * Returns a fixed, generic 401 body. The raw {@link AuthenticationException}
  * message is NEVER reflected into the response (information-disclosure hardening); the
  * body is produced via Jackson serialization, not string concatenation.
  */

@@ -7,7 +7,7 @@
           https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
 
     <!--
-      PHI ACCESS AUDIT LOG (P1 — Batch 4)
+      PHI ACCESS AUDIT LOG
 
       Append-only / immutable audit trail of every medical-history and
       patient-file READ and WRITE (allow AND deny). Rows are only ever

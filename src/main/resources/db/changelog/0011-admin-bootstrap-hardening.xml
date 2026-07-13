@@ -6,7 +6,7 @@
           http://www.liquibase.org/xml/ns/dbchangelog
           https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
 
-    <!-- BSEC-H-4 — add must_reset_password flag for env-provisioned admin.
+    <!-- Add must_reset_password flag for env-provisioned admin.
          New entity column => MUST live in a changelog (ddl-auto=none). -->
     <changeSet id="0011-01-add-must-reset-password" author="MediBook_Security">
         <preConditions onFail="MARK_RAN">
@@ -21,7 +21,7 @@
         </addColumn>
     </changeSet>
 
-    <!-- BSEC-H-4 — neutralize the committed seed admin from 0005-insert-admin.xml.
+    <!-- Neutralize the committed seed admin from 0005-insert-admin.xml.
          Do NOT edit the already-applied 0005 changeSet (breaks Liquibase checksums).
          Instead: disable the static-credential account (status DISABLED + force reset)
          and invalidate its committed BCrypt hash so the leaked hash is unusable.

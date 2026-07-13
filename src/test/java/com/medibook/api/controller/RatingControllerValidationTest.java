@@ -24,7 +24,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * BSEC-M-1 — proves bean validation (@Valid) is genuinely applied to the
+ * Proves bean validation (@Valid) is genuinely applied to the
  * {@code RatingController} request body.
  *
  * <p>NOTE (why this test used to be false-green): {@code TurnAssignedService.addRating}

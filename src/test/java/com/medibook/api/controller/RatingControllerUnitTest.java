@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.*;
 
 /**
- * BSEC-L-1: a missing/invalid principal must yield 401, never an NPE -> 500.
+ * A missing/invalid principal must yield 401, never an NPE -> 500.
  */
 @ExtendWith(MockitoExtension.class)
 class RatingControllerUnitTest {

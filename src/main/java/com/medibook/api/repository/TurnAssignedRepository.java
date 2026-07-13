@@ -39,7 +39,7 @@ public interface TurnAssignedRepository extends JpaRepository<TurnAssigned, UUID
     /**
      * True when the patient has a FUTURE (after {@code now}) active — non-cancelled /
      * non-no-show — turn with this doctor. Used by the follow-up "due" panel to
-     * live-filter out patients who already have an upcoming turn (F2 / OQ-4).
+     * live-filter out patients who already have an upcoming turn.
      * Note the deliberate type split: turn {@code scheduledAt} is an
      * {@code OffsetDateTime}; the reminder's {@code scheduled_for} is a
      * {@code LocalDate}.
@@ -49,7 +49,7 @@ public interface TurnAssignedRepository extends JpaRepository<TurnAssigned, UUID
     
     /**
      * The patient's most-recent turn with a given status for this doctor. Used by
-     * the F3 "due" panel to enrich {@code lastTurnDate} (most-recent COMPLETED
+     * the "due" panel to enrich {@code lastTurnDate} (most-recent COMPLETED
      * turn). Ownership-scoped by doctor + patient.
      */
     Optional<TurnAssigned> findFirstByDoctor_IdAndPatient_IdAndStatusOrderByScheduledAtDesc(

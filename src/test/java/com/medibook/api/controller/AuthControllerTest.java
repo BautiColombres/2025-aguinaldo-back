@@ -93,8 +93,6 @@ class AuthControllerTest {
                 + "}";
     }
 
-    // ---- BSEC-C-1 ----
-
     @Test
     void registerAdmin_Anonymous_IsRejected() throws Exception {
         mockMvc.perform(post("/api/auth/register/admin")
@@ -150,7 +148,7 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.status").value("PENDING"));
     }
 
-    // ---- FSEC-H1 Stage 3: refresh token is cookie-only (no body field, no header) ----
+    // ---- refresh token is cookie-only (no body field, no header) ----
 
     @Test
     void signIn_setsRefreshTokenCookie_andBodyHasNoRefreshToken() throws Exception {
@@ -158,7 +156,7 @@ class AuthControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"email\":\"existing-patient@example.com\",\"password\":\"password123\"}"))
                 .andExpect(status().isOk())
-                // FSEC-H1 Stage 3: the refresh token is NO LONGER present in the JSON body.
+                // The refresh token is NO LONGER present in the JSON body.
                 .andExpect(jsonPath("$.refreshToken").doesNotExist())
                 .andExpect(jsonPath("$.accessToken").isNotEmpty())
                 .andReturn();
@@ -190,7 +188,7 @@ class AuthControllerTest {
                 .cookie(new Cookie("refreshToken", refresh)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accessToken").isNotEmpty())
-                // FSEC-H1 Stage 3: rotation result must not leak the refresh token in the body.
+                // Rotation result must not leak the refresh token in the body.
                 .andExpect(jsonPath("$.refreshToken").doesNotExist())
                 .andReturn();
 
@@ -203,7 +201,7 @@ class AuthControllerTest {
 
     @Test
     void refreshToken_headerOnly_isUnauthorized() throws Exception {
-        // FSEC-H1 Stage 3: the Refresh-Token header fallback is removed. A request that
+        // The Refresh-Token header fallback is removed. A request that
         // carries ONLY the old header (no cookie) must now be rejected with 401.
         String refresh = signInAndGetRefreshToken("existing-patient@example.com", "password123");
 
@@ -249,7 +247,7 @@ class AuthControllerTest {
 
     @Test
     void signOut_ignoresHeader_doesNotRevokeToken() throws Exception {
-        // FSEC-H1 Stage 3: signout ignores the Refresh-Token header. A signout carrying
+        // Signout ignores the Refresh-Token header. A signout carrying
         // only the header stays idempotent (200 + cookie cleared) but does NOT revoke the
         // token — proven by the token still refreshing successfully via the cookie.
         String refresh = signInAndGetRefreshToken("existing-patient@example.com", "password123");
@@ -284,7 +282,7 @@ class AuthControllerTest {
     // ---- helpers ----
 
     /**
-     * FSEC-H1 Stage 3: the refresh token is no longer in the JSON body — read it from the
+     * The refresh token is no longer in the JSON body — read it from the
      * {@code Set-Cookie} header instead.
      */
     private String signInAndGetRefreshToken(String email, String password) throws Exception {

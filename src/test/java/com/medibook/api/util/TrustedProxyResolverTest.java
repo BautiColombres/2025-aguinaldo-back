@@ -7,7 +7,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
- * BSEC-M-4 hardening — X-Forwarded-For must only be trusted when the immediate
+ * X-Forwarded-For must only be trusted when the immediate
  * peer (remoteAddr) is in the configured trusted-proxy allowlist. Default empty
  * list = never trust the header.
  */

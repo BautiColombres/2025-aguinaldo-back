@@ -52,7 +52,7 @@ class UserTest {
 
     @Test
     void setDoctorProfile_associatesBidirectionally_withoutForcingId() {
-        // BBUG-M5: the setter must not force the profile id to the (possibly null) user id.
+        // The setter must not force the profile id to the (possibly null) user id.
         // The id is derived at persist time via @MapsId. The setter's only job is to wire
         // both sides of the association.
         User user = new User();

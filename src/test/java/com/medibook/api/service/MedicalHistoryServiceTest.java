@@ -531,7 +531,7 @@ class MedicalHistoryServiceTest {
     }
 
     // ---------------------------------------------------------------------
-    // F1 — Tags: normalization, allowlist, frequency, per-doctor scoping
+    // Tags: normalization, allowlist, frequency, per-doctor scoping
     // ---------------------------------------------------------------------
 
     @Test
@@ -663,7 +663,7 @@ class MedicalHistoryServiceTest {
         assertEquals("gripe", result.get(1).getTag());
         assertEquals(1L, result.get(1).getCount());
 
-        // Query is scoped to BOTH patient and requesting doctor (OQ-5 privacy boundary).
+        // Query is scoped to BOTH patient and requesting doctor (privacy boundary).
         verify(medicalHistoryRepository).findTagFrequencyByPatientAndDoctor(patientId, doctorId);
         verify(auditLogService).record(eq(AuditAction.READ), eq(AuditOutcome.ALLOW),
                 eq(patientId), eq("MEDICAL_HISTORY"), any());

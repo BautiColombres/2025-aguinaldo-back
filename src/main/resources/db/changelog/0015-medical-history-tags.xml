@@ -7,9 +7,9 @@
           https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
 
     <!--
-      Normalized tag storage for medical history entries (OQ-1 = B).
+      Normalized tag storage for medical history entries.
       One row per (medical_history_id, tag). Backs the per-patient /
-      per-doctor tag-frequency query (OQ-5).
+      per-doctor tag-frequency query.
 
       INVARIANT: the JPA @ElementCollection mapping in
       entity/MedicalHistory.java MUST use exactly:

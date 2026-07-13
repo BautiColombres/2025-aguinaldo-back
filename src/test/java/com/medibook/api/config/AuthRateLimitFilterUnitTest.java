@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
- * BSEC-M-4 hardening — unit-level coverage of the filter's keying behaviour
+ * Unit-level coverage of the filter's keying behaviour
  * (trusted-proxy gating + per-username dimension) without a full Spring context.
  */
 class AuthRateLimitFilterUnitTest {

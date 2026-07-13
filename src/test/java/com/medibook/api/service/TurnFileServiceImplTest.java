@@ -151,7 +151,7 @@ class TurnFileServiceImplTest {
 
     @Test
     void uploadTurnFile_DbPersistenceFails_CompensatesWithStorageDelete() {
-        // BBUG-H4: storage upload succeeds but the DB persistence fails.
+        // Storage upload succeeds but the DB persistence fails.
         // The just-uploaded file MUST be deleted from storage (compensating action)
         // so storage and DB do not diverge, and the error must propagate.
         String fileName = "test-file.pdf";
@@ -181,7 +181,7 @@ class TurnFileServiceImplTest {
 
     @Test
     void uploadTurnFile_AuditFailure_DoesNotFailUpload() {
-        // BBUG-H4 rec #1: the file + DB row are already committed when the post-commit
+        // The file + DB row are already committed when the post-commit
         // audit record runs. An audit hiccup MUST NOT surface to the client as an upload
         // failure — the upload response must still be returned.
         String fileName = "test-file.pdf";
@@ -205,7 +205,7 @@ class TurnFileServiceImplTest {
 
     @Test
     void uploadTurnFile_StorageKeyIsCollisionFreeAcrossUploads() {
-        // BBUG-H4 rec #2: the storage key must be collision-free (UUID suffix) so two
+        // The storage key must be collision-free (UUID suffix) so two
         // concurrent uploads for the same turn+filename in the same millisecond cannot
         // collide on the S3 key (a loser's compensating delete could otherwise remove a
         // winner's committed object).

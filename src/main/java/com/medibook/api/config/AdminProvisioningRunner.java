@@ -11,19 +11,14 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * BSEC-H-4 — env-driven admin provisioning.
+ * Env-driven admin provisioning.
  *
- * <p>Replaces the committed seed admin (whose static BCrypt hash lived in
- * {@code 0005-insert-admin.xml} and is neutralized by {@code 0011-*.xml}). On
- * startup this creates-or-updates the admin from {@code ADMIN_EMAIL} /
+ * <p>On startup this creates-or-updates the admin from {@code ADMIN_EMAIL} /
  * {@code ADMIN_PASSWORD} (BCrypt-encoded), idempotently, and flags the account
  * {@code mustResetPassword=true}.
  *
  * <p><b>Fail-fast:</b> the application refuses to boot if the required admin
  * bootstrap credentials are absent.
- *
- * <p>Follow-up (out of scope for this batch): wire {@code mustResetPassword}
- * into a forced password-reset flow on first login.
  */
 @Component
 @Slf4j

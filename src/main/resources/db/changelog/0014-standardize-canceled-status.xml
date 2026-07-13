@@ -7,7 +7,7 @@
           https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
 
     <!--
-        BBUG-M2: standardize the canceled turn status spelling.
+        Standardize the canceled turn status spelling.
         The canonical value is `CANCELED` (one L) — production code writes and reads
         it exclusively (TurnAssignedService#cancelTurn, TurnAssignedRepository slot
         queries, DoctorService metrics). The double-L variant `CANCELLED` only ever

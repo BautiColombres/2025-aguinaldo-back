@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Exercises the {@code medical_history_tags} @ElementCollection mapping and the
- * per-patient / per-doctor tag-frequency query (OQ-5).
+ * per-patient / per-doctor tag-frequency query.
  *
  * <p>NOTE: H2 uses the Hibernate-generated schema (Liquibase disabled in tests),
  * so this validates the JPA mapping/round-trip, NOT the 0015 Liquibase DDL — the

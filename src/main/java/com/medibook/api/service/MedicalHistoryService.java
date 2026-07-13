@@ -46,7 +46,7 @@ public class MedicalHistoryService {
     private static final int MAX_TAGS = 10;
     private static final int MAX_TAG_LENGTH = 50;
     /**
-     * Server-side character allowlist for tags (OQ-6): Unicode letters
+     * Server-side character allowlist for tags: Unicode letters
      * (incl. accents / ñ), digits, spaces and hyphens. Anything else is rejected.
      */
     private static final Pattern TAG_ALLOWLIST = Pattern.compile("^[\\p{L}\\p{Nd} -]+$");
@@ -132,8 +132,7 @@ public class MedicalHistoryService {
     }
 
     /**
-     * Authorization-enforced read of a patient's medical history (defense in depth,
-     * mirrors the controller {@code @PreAuthorize("@medAuthz.canRead(...)")} check).
+     * Authorization-enforced read of a patient's medical history.
      */
     public List<MedicalHistoryDTO> getPatientMedicalHistoryAuthorized(Authentication authentication, UUID patientId) {
         if (!medicalHistoryAuthorization.canRead(authentication, patientId)) {
@@ -221,8 +220,8 @@ public class MedicalHistoryService {
     }
 
     /**
-     * Per-patient, per-requesting-doctor tag frequencies (OQ-5). Authorization is
-     * enforced INSIDE the service (OQ-8a) so a DENY is audited: the caller must be
+     * Per-patient, per-requesting-doctor tag frequencies. Authorization is
+     * enforced INSIDE the service so a DENY is audited: the caller must be
      * the doctor named in the path ({@code principal.id == doctorId}) AND have an
      * active relationship with the patient ({@code @medAuthz.canRead}). On denial a
      * READ/DENY audit row (id-only, no PHI) is written and access is refused; the
@@ -250,7 +249,7 @@ public class MedicalHistoryService {
     }
 
     /**
-     * Normalizes tags per OQ-6: trim, reject blanks, lowercase, dedupe (preserving
+     * Normalizes tags: trim, reject blanks, lowercase, dedupe (preserving
      * order), enforce the character allowlist and count/length caps. Rejections are
      * surfaced as {@link IllegalArgumentException} (mapped to HTTP 400 by the
      * controller). A {@code null} input yields an empty set.

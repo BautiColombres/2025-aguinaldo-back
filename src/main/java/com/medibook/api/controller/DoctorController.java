@@ -140,21 +140,6 @@ public class DoctorController {
         return ResponseEntity.ok(histories);
     }
 
-    /**
-     * Per-patient tag frequencies scoped to the requesting doctor's own entries
-     * (OQ-5). Coarse-gated to {@code DOCTOR} only; the fine-grained
-     * {@code principal.id == doctorId} + {@code @medAuthz.canRead} ownership check
-     * (and its id-only DENY audit) is enforced INSIDE the service (OQ-8a) — putting
-     * the ownership SpEL in {@code @PreAuthorize} would throw before the service and
-     * audit nothing.
-     * <p>
-     * DELIBERATE: the {@code hasRole('DOCTOR')}-only gate excludes ADMIN (→ 403) by
-     * design and intentionally diverges from the sibling
-     * {@link #getPatientMedicalHistoryByDoctor} (which allows ADMIN). Tag frequency is
-     * a per-doctor clinical inference (OQ-5 per-doctor scoping); an admin has no "own
-     * doctorId" to satisfy the service {@code isOwner} check, so admin is excluded on
-     * purpose — a future refactor must NOT "harmonize" the two matchers.
-     */
     @GetMapping("/{doctorId}/patients/{patientId}/tags")
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<List<TagFrequencyDTO>> getPatientFrequentTags(

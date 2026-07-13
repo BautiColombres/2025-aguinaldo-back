@@ -55,8 +55,8 @@ public interface MedicalHistoryRepository extends JpaRepository<MedicalHistory, 
     List<Object[]> findLatestContentsByPatientIds(@Param("patientIds") List<UUID> patientIds);
 
     /**
-     * Tag frequency for a patient scoped to a SINGLE doctor's own entries (OQ-5:
-     * per-patient AND per-requesting-doctor — never cross-doctor). Returns rows of
+     * Tag frequency for a patient scoped to a SINGLE doctor's own entries
+     * (per-patient AND per-requesting-doctor — never cross-doctor). Returns rows of
      * {@code [tag (String), count (Long)]} ordered by count descending. The
      * doctor.id filter is the privacy boundary: doctor A must never see doctor B's
      * tag counts for the same patient.

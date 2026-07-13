@@ -29,7 +29,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * BSEC-H-5: generic storage endpoints are cross-tenant. BSEC-H-2: path traversal +
+ * Generic storage endpoints are cross-tenant; path traversal +
  * unescaped error reflection.
  */
 @SpringBootTest
@@ -76,7 +76,7 @@ class StorageControllerAuthzTest {
         adminToken = getAuthToken(admin.getEmail());
     }
 
-    // ---- BSEC-H-5: generic delete endpoint must NOT be usable cross-tenant ----
+    // ---- generic delete endpoint must NOT be usable cross-tenant ----
 
     @Test
     void genericDelete_byDoctor_isForbidden() throws Exception {
@@ -111,7 +111,7 @@ class StorageControllerAuthzTest {
                 .andExpect(status().isForbidden());
     }
 
-    // ---- BSEC-H-2: disallowed bucket rejected for admin-only generic endpoints ----
+    // ---- disallowed bucket rejected for admin-only generic endpoints ----
 
     @Test
     void genericDelete_disallowedBucket_isRejected() throws Exception {
@@ -120,7 +120,7 @@ class StorageControllerAuthzTest {
                 .andExpect(status().is4xxClientError());
     }
 
-    // ---- BSEC-H-5: turn-file ownership ----
+    // ---- turn-file ownership ----
 
     @Test
     void deleteTurnFile_byNonOwnerPatient_isForbidden() throws Exception {
@@ -140,7 +140,7 @@ class StorageControllerAuthzTest {
                 .andExpect(status().isForbidden());
     }
 
-    // ---- BSEC-H-2: error bodies are valid JSON DTOs (no raw exception reflection) ----
+    // ---- error bodies are valid JSON DTOs (no raw exception reflection) ----
 
     @Test
     void deleteTurnFile_ownerWithNoFile_returnsValidJsonErrorDto() throws Exception {

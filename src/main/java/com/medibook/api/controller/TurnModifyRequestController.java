@@ -18,14 +18,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * BSEC-M-5: this controller intentionally reads the authenticated principal via
- * {@code request.getAttribute("authenticatedUser")}. That attribute is set by
- * {@code TokenAuthenticationFilter} to the SAME {@code User} as the standard
- * SecurityContext principal, so it is equivalent and secure (see the filter's comment).
- * It is kept on the legacy mechanism deliberately (existing unit tests mock the request
- * attribute); do NOT treat this as a second, divergent authorization source.
- */
 @RestController
 @RequestMapping("/api/turns/modify-requests")
 @RequiredArgsConstructor

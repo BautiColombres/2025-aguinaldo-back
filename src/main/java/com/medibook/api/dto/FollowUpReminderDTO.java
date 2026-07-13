@@ -11,7 +11,7 @@ import java.util.UUID;
 
 /**
  * Read model for a follow-up reminder. Carries only ids/dates — NO clinical
- * tag/motive (PHI) and NO {@code monthsOverdue}/overdue concept (OQ-4).
+ * tag/motive (PHI) and NO {@code monthsOverdue}/overdue concept.
  */
 @Data
 @Builder

@@ -11,7 +11,7 @@ import java.util.UUID;
  * DTO for creating medical history entries associated with turns.
  *
  * <p>Tags are validated for count (&le;10) and per-tag length (&le;50) here at
- * the bean-validation layer (OQ-6). Trim/lowercase/dedupe and the server-side
+ * the bean-validation layer. Trim/lowercase/dedupe and the server-side
  * character allowlist are applied in {@code MedicalHistoryService}.
  */
 @Data

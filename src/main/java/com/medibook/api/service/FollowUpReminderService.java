@@ -29,12 +29,12 @@ import java.util.stream.Collectors;
 import static com.medibook.api.util.DateTimeUtils.ARGENTINA_ZONE;
 
 /**
- * Follow-up reminders ("control en X meses") — F2 / OQ-2 + OQ-4 + OQ-7 + OQ-8a.
+ * Follow-up reminders ("control en X meses").
  *
- * <p>Authorization is enforced INSIDE the service (OQ-8a) so a DENY row is
+ * <p>Authorization is enforced INSIDE the service so a DENY row is
  * actually audited (id-only, no PHI): controllers keep only a coarse
  * {@code hasRole(...)} gate. All reminder fields are derived server-side from the
- * originating medical-history entry (IDOR prevention). On creation exactly one
+ * originating medical-history entry. On creation exactly one
  * one-shot {@code FOLLOWUP_SCHEDULED} notification is sent to the doctor AND one
  * to the patient — both generic / no-PHI. There is NO scheduled job, NO overdue
  * concept and reminders never auto-expire.
@@ -81,7 +81,7 @@ public class FollowUpReminderService {
 
         User patient = history.getPatient();
         User doctor = history.getDoctor();
-        // OQ-7: anchored to the clinical visit date, NOT history.createdAt.
+        // Anchored to the clinical visit date, NOT history.createdAt.
         LocalDate scheduledFor = history.getTurn().getScheduledAt().toLocalDate().plusMonths(months);
 
         FollowUpReminder reminder = FollowUpReminder.builder()
@@ -101,7 +101,7 @@ public class FollowUpReminderService {
         auditLogService.record(AuditAction.CREATE, AuditOutcome.ALLOW,
                 patient.getId(), RESOURCE_TYPE, saved.getId() != null ? saved.getId().toString() : null);
 
-        // OQ-2 + OQ-4: exactly one one-shot notification to each recipient, generic / no-PHI.
+        // Exactly one one-shot notification to each recipient, generic / no-PHI.
         notificationService.createFollowUpScheduledDoctorNotification(doctor.getId(), saved.getId());
         notificationService.createFollowUpScheduledPatientNotification(patient.getId(), saved.getId());
 
@@ -117,7 +117,7 @@ public class FollowUpReminderService {
                 .orElseThrow(() -> {
                     // Coarse principal.id == doctorId passed, but the reminder belongs to
                     // ANOTHER doctor (empty under scope). Emit an id-only DENY audit (no PHI)
-                    // BEFORE the 404 so cross-doctor dismiss is audited like create/read (OQ-8a).
+                    // BEFORE the 404 so cross-doctor dismiss is audited like create/read.
                     auditLogService.record(AuditAction.UPDATE, AuditOutcome.DENY,
                             null, RESOURCE_TYPE, reminderId.toString());
                     return new ResponseStatusException(HttpStatus.NOT_FOUND,
@@ -135,8 +135,8 @@ public class FollowUpReminderService {
 
     /**
      * The doctor's live "due + no future turn" set: non-dismissed reminders due
-     * today or earlier (past-due still shows — no expiry, OQ-4), minus patients
-     * who already have a future active turn with this doctor. F3 reuses this.
+     * today or earlier (past-due still shows — no expiry), minus patients
+     * who already have a future active turn with this doctor.
      */
     public List<FollowUpReminderDTO> getDueReminders(Authentication authentication, UUID doctorId) {
         requireDoctorPrincipal(authentication, doctorId, AuditAction.READ);
@@ -155,7 +155,7 @@ public class FollowUpReminderService {
     }
 
     /**
-     * F3 "pacientes que deben volver" panel. DELEGATES to {@link #getDueReminders}
+     * The "pacientes que deben volver" panel. DELEGATES to {@link #getDueReminders}
      * for the base "due + no future turn" set (that filter — and the service-side
      * authz + single READ audit — live in exactly ONE place). The panel lists
      * PATIENTS (not reminders), so a patient with more than one active due reminder
@@ -163,7 +163,7 @@ public class FollowUpReminderService {
      * reminder with the earliest (soonest) {@code scheduledFor} — the nearest
      * recommended return date. The final list is ordered by {@code scheduledFor}
      * ascending. Each row is enriched with {@code lastTurnDate} (the patient's
-     * most-recent COMPLETED turn with this doctor). NO overdue computation (OQ-4);
+     * most-recent COMPLETED turn with this doctor). NO overdue computation;
      * {@code lastTurnDate} may be {@code null}.
      */
     public List<DueForFollowUpDTO> getPatientsDueForFollowUp(Authentication authentication, UUID doctorId) {
@@ -194,8 +194,8 @@ public class FollowUpReminderService {
     }
 
     /**
-     * Patient-owned read (OQ-2 baseline): the patient's own non-dismissed
-     * reminders. Service-side authz (OQ-8a): the principal must be the patient.
+     * Patient-owned read: the patient's own non-dismissed
+     * reminders. Service-side authz: the principal must be the patient.
      */
     public List<FollowUpReminderDTO> getRemindersForPatient(Authentication authentication, UUID patientId) {
         UUID principalId = principalId(authentication);

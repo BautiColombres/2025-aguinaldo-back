@@ -284,7 +284,7 @@ class AuthServiceTest {
         assertEquals(expectedResponse.id(), result.response().id());
         assertEquals(expectedResponse.email(), result.response().email());
         assertEquals(expectedResponse.accessToken(), result.response().accessToken());
-        // FSEC-H1 Stage 3: refresh token is on the result (cookie), not in the body DTO.
+        // Refresh token is on the result (cookie), not in the body DTO.
         assertNotNull(result.refreshToken());
 
         verify(userRepository).findByEmail(request.email());
@@ -440,7 +440,7 @@ class AuthServiceTest {
         verifyNoMoreInteractions(refreshTokenRepository, authMapper);
     }
 
-    // BSEC-L-2: mirror production hmacToken() — refresh tokens are keyed HMAC-SHA256.
+    // Mirror production hmacToken() — refresh tokens are keyed HMAC-SHA256.
     private String hashToken(String token) {
         try {
             javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");

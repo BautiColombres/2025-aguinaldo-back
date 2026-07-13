@@ -25,7 +25,6 @@ public class MedicalHistoryController {
     public ResponseEntity<List<MedicalHistoryDTO>> getPatientMedicalHistory(
             @PathVariable UUID patientId,
             Authentication authentication) {
-        // Service-layer enforcement as defense in depth (mirrors @PreAuthorize above).
         List<MedicalHistoryDTO> histories =
                 medicalHistoryService.getPatientMedicalHistoryAuthorized(authentication, patientId);
         return ResponseEntity.ok(histories);
@@ -35,8 +34,6 @@ public class MedicalHistoryController {
     public ResponseEntity<MedicalHistoryDTO> getMedicalHistoryById(
             @PathVariable UUID historyId,
             Authentication authentication) {
-        // Cannot resolve the patient relationship in SpEL before loading the entry,
-        // so authorization is enforced inside the service (same @medAuthz read rules).
         MedicalHistoryDTO history = medicalHistoryService.getMedicalHistoryById(authentication, historyId);
         return ResponseEntity.ok(history);
     }

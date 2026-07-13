@@ -1,7 +1,7 @@
 package com.medibook.api.dto.Auth;
 
 /**
- * FSEC-H1 Stage 3: internal service-level result of a sign-in / token-refresh.
+ * Internal service-level result of a sign-in / token-refresh.
  *
  * <p>Carries the JSON {@link SignInResponseDTO} body <b>and</b> the raw refresh token
  * separately so the controller can put the raw token into the httpOnly cookie WITHOUT

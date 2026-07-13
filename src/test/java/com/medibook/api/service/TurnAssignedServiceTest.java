@@ -188,7 +188,7 @@ class TurnAssignedServiceTest {
 
     @Test
     void createTurn_TurnPersistenceFails_PropagatesException() {
-        // BBUG-M6: turn persistence is a must-succeed operation. A DB failure while
+        // Turn persistence is a must-succeed operation. A DB failure while
         // saving the turn must propagate, not be swallowed.
         when(userRepo.findById(doctorId)).thenReturn(Optional.of(doctor));
         when(userRepo.findById(patientId)).thenReturn(Optional.of(patient));
@@ -204,7 +204,7 @@ class TurnAssignedServiceTest {
 
     @Test
     void createTurn_NotificationFails_TurnStillCreated() {
-        // BBUG-M6: the doctor notification is a best-effort side effect. A failure there
+        // The doctor notification is a best-effort side effect. A failure there
         // must NOT fail turn creation.
         when(userRepo.findById(doctorId)).thenReturn(Optional.of(doctor));
         when(userRepo.findById(patientId)).thenReturn(Optional.of(patient));

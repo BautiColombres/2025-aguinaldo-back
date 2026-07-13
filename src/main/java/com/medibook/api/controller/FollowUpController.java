@@ -17,14 +17,7 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Follow-up reminder endpoints (F2). DTO-only responses.
- *
- * <p>Authorization: controllers keep only a coarse {@code hasRole(...)} gate. The
- * fine-grained {@code principal.id == pathId} + ownership decision (and its
- * id-only DENY audit) is enforced INSIDE {@link FollowUpReminderService} (OQ-8a) —
- * a {@code @PreAuthorize} ownership SpEL clause would throw before the service and
- * audit nothing, so it is deliberately NOT used here (mirrors
- * {@code DoctorController#getPatientFrequentTags}).
+ * Follow-up reminder endpoints. DTO-only responses.
  */
 @RestController
 @RequiredArgsConstructor

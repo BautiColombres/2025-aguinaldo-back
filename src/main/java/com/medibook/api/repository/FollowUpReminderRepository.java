@@ -13,7 +13,7 @@ public interface FollowUpReminderRepository extends JpaRepository<FollowUpRemind
     /**
      * "Due" reminders for a doctor: non-dismissed and whose recommended control
      * date has arrived ({@code scheduled_for <= today}). Includes past-due
-     * reminders — they never expire on the date passing (OQ-4).
+     * reminders — they never expire on the date passing.
      */
     List<FollowUpReminder> findByDoctor_IdAndDismissedFalseAndScheduledForLessThanEqual(
             UUID doctorId, LocalDate today);
@@ -31,7 +31,7 @@ public interface FollowUpReminderRepository extends JpaRepository<FollowUpRemind
     Optional<FollowUpReminder> findByIdAndDoctor_Id(UUID id, UUID doctorId);
 
     /**
-     * Patient-owned read (OQ-2 baseline): the patient's own non-dismissed
+     * Patient-owned read: the patient's own non-dismissed
      * reminders, soonest control date first.
      */
     List<FollowUpReminder> findByPatient_IdAndDismissedFalseOrderByScheduledForAsc(UUID patientId);

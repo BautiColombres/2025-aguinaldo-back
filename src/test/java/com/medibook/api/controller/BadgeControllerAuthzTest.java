@@ -21,7 +21,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * BSEC-M-5 (IDOR subset): /api/badges/{userId}, /{userId}/progress and the
+ * IDOR subset: /api/badges/{userId}, /{userId}/progress and the
  * /{userId}/evaluate WRITE trigger must enforce ownership (caller owns userId or ADMIN).
  */
 @SpringBootTest

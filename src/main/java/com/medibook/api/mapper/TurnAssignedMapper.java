@@ -52,7 +52,7 @@ public class TurnAssignedMapper {
     }
 
     /**
-     * BBUG-L4: batch mapping — resolves the "already rated" flags and attached files for ALL
+     * Batch mapping — resolves the "already rated" flags and attached files for ALL
      * given turns with TWO queries total (one for ratings, one for files) instead of up to
      * three per row. The single-row {@link #toDTO(TurnAssigned)} API is unchanged.
      */

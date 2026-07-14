@@ -3,7 +3,7 @@ package com.medibook.api.util;
 import java.util.Set;
 
 /**
- * Single source of truth for storage hardening (BSEC-H-5 / BSEC-H-2):
+ * Single source of truth for storage hardening:
  * <ul>
  *   <li>fixed bucket allowlist — no arbitrary cross-tenant buckets;</li>
  *   <li>filename sanitization — reject path traversal ({@code ../}, {@code ..\}),

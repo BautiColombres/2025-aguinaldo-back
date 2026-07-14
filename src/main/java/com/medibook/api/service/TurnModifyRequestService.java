@@ -112,7 +112,7 @@ public class TurnModifyRequestService {
 
         TurnAssigned turn = request.getTurnAssigned();
 
-        // BBUG-H3: re-check the target slot is free (excluding the current turn)
+        // Re-check the target slot is free (excluding the current turn)
         // before committing, so approval cannot double-book an already-taken slot.
         boolean slotTaken = turnAssignedRepository.existsConflictingTurnExcludingId(
                 request.getDoctor().getId(),

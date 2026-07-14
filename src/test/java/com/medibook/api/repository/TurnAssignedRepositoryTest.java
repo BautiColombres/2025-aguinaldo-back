@@ -378,6 +378,60 @@ class TurnAssignedRepositoryTest {
     }
 
     @Test
+    void existsFutureActiveTurn_futureActiveTurn_returnsTrue() {
+        OffsetDateTime now = OffsetDateTime.now();
+        // turnAssigned1 is doctor+patient, +1 day, SCHEDULED (active, future)
+        boolean exists = turnAssignedRepository
+                .existsFutureActiveTurn(doctorUser.getId(), patientUser.getId(), now);
+        assertTrue(exists);
+    }
+
+    @Test
+    void existsFutureActiveTurn_futureCancelledTurn_returnsFalse() {
+        OffsetDateTime now = OffsetDateTime.now();
+        // Only future turn for (doctor, patient) besides the SCHEDULED one is CANCELED.
+        // Remove the active one so only the CANCELED future turn remains.
+        turnAssignedRepository.deleteById(turnAssigned1.getId());
+
+        boolean exists = turnAssignedRepository
+                .existsFutureActiveTurn(doctorUser.getId(), patientUser.getId(), now);
+        assertFalse(exists);
+    }
+
+    @Test
+    void existsFutureActiveTurn_futureNoShowTurn_returnsFalse() {
+        OffsetDateTime now = OffsetDateTime.now();
+        // A patient whose ONLY future turn with the doctor is NO_SHOW: the query
+        // must exclude it (NOT IN ('CANCELED','NO_SHOW')) and return false. Querying
+        // this patient's real id genuinely exercises the NO_SHOW exclusion clause.
+        User noShowPatient = entityManager.persistAndFlush(
+                createUser("noshow.patient@test.com", 33333333L, "PATIENT", "ACTIVE"));
+        TurnAssigned noShow = createTurnAssigned(doctorUser, noShowPatient,
+                OffsetDateTime.now().plusDays(4), "NO_SHOW");
+        entityManager.persistAndFlush(noShow);
+        entityManager.clear();
+
+        boolean exists = turnAssignedRepository
+                .existsFutureActiveTurn(doctorUser.getId(), noShowPatient.getId(), now);
+        assertFalse(exists);
+    }
+
+    @Test
+    void existsFutureActiveTurn_pastActiveTurn_returnsFalse() {
+        OffsetDateTime now = OffsetDateTime.now();
+        User lonePatient = entityManager.persistAndFlush(
+                createUser("lone.patient@test.com", 22222222L, "PATIENT", "ACTIVE"));
+        TurnAssigned pastTurn = createTurnAssigned(doctorUser, lonePatient,
+                OffsetDateTime.now().minusDays(2), "COMPLETED");
+        entityManager.persistAndFlush(pastTurn);
+        entityManager.clear();
+
+        boolean exists = turnAssignedRepository
+                .existsFutureActiveTurn(doctorUser.getId(), lonePatient.getId(), now);
+        assertFalse(exists);
+    }
+
+    @Test
     void saveTurnWithMotive_Success() {
         TurnAssigned turn = createTurnAssigned(doctorUser, patientUser,
             OffsetDateTime.now().plusDays(7), "SCHEDULED");

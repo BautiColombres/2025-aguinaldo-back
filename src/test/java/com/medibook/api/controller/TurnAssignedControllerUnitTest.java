@@ -26,8 +26,8 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Unit tests for {@link TurnAssignedController} covering BSEC-L-1 (null principal -> 401)
- * and BBUG-L1 (available-turns offset derived from ARGENTINA_ZONE, not a hardcoded literal).
+ * Unit tests for {@link TurnAssignedController} covering the null-principal case (-> 401)
+ * and the available-turns offset derived from ARGENTINA_ZONE, not a hardcoded literal.
  */
 @ExtendWith(MockitoExtension.class)
 class TurnAssignedControllerUnitTest {
@@ -42,7 +42,7 @@ class TurnAssignedControllerUnitTest {
     @InjectMocks
     private TurnAssignedController controller;
 
-    // ---- BSEC-L-1 ----
+    // ---- null principal ----
 
     @Test
     void cancelTurn_nullAuthentication_returns401() {
@@ -63,7 +63,7 @@ class TurnAssignedControllerUnitTest {
         verifyNoInteractions(turnService);
     }
 
-    // ---- BBUG-L1 ----
+    // ---- available-turns offset ----
 
     @Test
     void getAvailableTurns_usesArgentinaZoneOffset_notHardcodedMinus03() {

@@ -13,7 +13,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * BSEC-M-4 — wiring for the in-app rate limiters.
+ * Wiring for the in-app rate limiters.
  *
  * <ul>
  *   <li>{@code authRateLimitService} + {@link AuthRateLimitFilter} protect

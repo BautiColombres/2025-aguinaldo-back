@@ -358,15 +358,8 @@ public class BadgeStatisticsUpdateService {
     }
 
     /**
-     * BBUG-L3: recomputes the only aggregate that badge progress actually consumes:
+     * Recomputes the only aggregate that badge progress actually consumes:
      * {@code turns_with_same_doctor} for patients (used by PATIENT_CONTINUOUS_FOLLOWUP).
-     *
-     * <p>The previous {@code updateTimeBasedStatistics} also wrote a set of faked "windowed"
-     * keys (turns_last_6_months, turns_last_90_days, last_5_turns_count,
-     * last_10_turns_punctual_count, last_15_turns_collaboration_count,
-     * last_15_turns_follow_instructions_count, cancellations_last_90_days). Those values were
-     * never real windows — they just copied totals or hardcoded 0 — and no badge/progress logic
-     * ever read them, so they were removed as dead code.
      */
     private void recomputePatientTurnsWithSameDoctor(UUID userId, Map<String, Object> statistics) {
         try {

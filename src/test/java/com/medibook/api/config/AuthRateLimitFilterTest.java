@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /**
- * BSEC-M-4 — in-app Bucket4j rate limiting on /api/auth/**.
+ * In-app Bucket4j rate limiting on /api/auth/**.
  * A low per-IP limit is configured for this test so the bucket can be exhausted.
  *
  * <p>By default NO trusted proxy is configured, so the spoofable

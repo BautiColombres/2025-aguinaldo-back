@@ -1,7 +1,7 @@
 package com.medibook.api.util;
 
 /**
- * BSEC-L-4: masking helpers so operational logs never leak PII/PHI.
+ * Masking helpers so operational logs never leak PII/PHI.
  * <ul>
  *   <li>{@link #maskEmail(String)} keeps the first local-part char + full domain
  *       (e.g. {@code alice@domain.com} → {@code a***@domain.com}).</li>

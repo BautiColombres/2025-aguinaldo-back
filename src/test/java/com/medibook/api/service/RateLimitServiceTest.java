@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * BSEC-M-4 — shared, bounded token-bucket rate limiter used by the auth filter
+ * Shared, bounded token-bucket rate limiter used by the auth filter
  * and by ExternalController (replacing its unbounded in-memory counter map).
  */
 class RateLimitServiceTest {

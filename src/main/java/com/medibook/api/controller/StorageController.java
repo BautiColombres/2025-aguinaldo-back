@@ -28,8 +28,6 @@ public class StorageController {
     private final SupabaseStorageService supabaseStorageService;
     private final TurnFileService turnFileService;
 
-    // ---- Turn-file endpoints (patient-owned, BSEC-H-5 ownership via @storageAuthz) ----
-
     @PostMapping(value = "/upload-turn-file", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('PATIENT') and @storageAuthz.canManageTurnFile(authentication, #turnId)")
     public ResponseEntity<?> uploadTurnFile(
@@ -69,8 +67,6 @@ public class StorageController {
                     "No se pudo eliminar el archivo", path);
         }
     }
-
-    // ---- Generic endpoints (admin-only, fixed bucket allowlist, BSEC-H-5 / BSEC-H-2) ----
 
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasRole('ADMIN')")
@@ -146,7 +142,6 @@ public class StorageController {
         return ResponseEntity.status(status).body(body);
     }
 
-    /** URL response DTO (BSEC-H-2: serialized via Jackson, not hand-built JSON). */
     public record UrlResponse(String url) {
     }
 }

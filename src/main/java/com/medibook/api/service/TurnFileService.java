@@ -18,7 +18,7 @@ public interface TurnFileService {
     Optional<TurnFile> getTurnFileInfo(UUID turnId);
 
     /**
-     * BBUG-L4: batch variant of {@link #getTurnFileInfo(UUID)} — returns the files for the
+     * Batch variant of {@link #getTurnFileInfo(UUID)} — returns the files for the
      * given turn ids keyed by turnId, resolved in a single query.
      */
     Map<UUID, TurnFile> getTurnFileInfoBatch(Collection<UUID> turnIds);

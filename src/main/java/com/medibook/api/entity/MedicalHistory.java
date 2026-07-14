@@ -10,6 +10,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 import static com.medibook.api.util.DateTimeUtils.ARGENTINA_ZONE;
@@ -21,6 +23,10 @@ import static com.medibook.api.util.DateTimeUtils.ARGENTINA_ZONE;
 @AllArgsConstructor
 @Builder
 @Table(name = "medical_history")
+// Class-level batching of LAZY MedicalHistory proxies (up to 32 per select).
+// Field-level @BatchSize is not allowed on @ManyToOne, so the batch hint lives
+// on the target entity.
+@org.hibernate.annotations.BatchSize(size = 32)
 public class MedicalHistory {
     
     @Id
@@ -52,6 +58,20 @@ public class MedicalHistory {
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "turn_id", nullable = false, unique = true)
     private TurnAssigned turn;
+
+    /**
+     * Normalized consultation tags. Persisted in the
+     * {@code medical_history_tags} table via changelog 0015 — the collection
+     * table / column names below MUST match that DDL exactly (H2 tests use the
+     * Hibernate-generated schema and cannot catch a mismatch).
+     */
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "medical_history_tags",
+            joinColumns = @JoinColumn(name = "medical_history_id"))
+    @Column(name = "tag", length = 50, nullable = false)
+    @org.hibernate.annotations.BatchSize(size = 32)
+    @Builder.Default
+    private Set<String> tags = new HashSet<>();
 
     @PrePersist
     protected void onCreate() {

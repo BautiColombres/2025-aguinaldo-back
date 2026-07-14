@@ -51,14 +51,14 @@ public class TurnFileServiceImpl implements TurnFileService {
         }
 
         String sanitizedOriginalName = sanitizeFileName(file.getOriginalFilename());
-        // BBUG-H4 rec #2: use a random UUID (not System.currentTimeMillis()) as the key
+        // Use a random UUID (not System.currentTimeMillis()) as the key
         // suffix so two concurrent uploads for the same turn+filename in the same
         // millisecond cannot collide on the storage key. A collision would let a loser's
         // compensating delete remove a winner's committed object.
         String customFileName = sanitizedOriginalName + "_" + turnId + "_" + UUID.randomUUID();
         log.info("Generated filename: {} for turnId: {}", customFileName, turnId);
 
-        // BBUG-H4: The storage upload is reactive. The DB persistence is BLOCKING JPA and
+        // The storage upload is reactive. The DB persistence is BLOCKING JPA and
         // must (1) run off the reactive event-loop thread, on a bounded scheduler, and
         // (2) happen inside a real @Transactional boundary (via the TurnFilePersister proxy
         // bean — a self-invocation would run with no transaction at all). If the DB write
@@ -117,11 +117,10 @@ public class TurnFileServiceImpl implements TurnFileService {
                 .map(TurnAssigned::getPatient)
                 .map(User::getId)
                 .orElse(null);
-        // BBUG-H4 rec #1: the file + row are already committed at this point. Wrap the
+        // The file + row are already committed at this point. Wrap the
         // audit record in a best-effort try/catch (matching the notification block below)
         // so a post-commit audit hiccup is never reported to the client as an upload
-        // failure. (AuditLogService.record already swallows internally; this is
-        // belt-and-suspenders to remove any perception divergence.)
+        // failure. (AuditLogService.record already swallows internally.)
         try {
             auditLogService.record(actor, AuditAction.CREATE, AuditOutcome.ALLOW,
                     subjectPatientId, RESOURCE_TYPE, turnId.toString());
@@ -157,7 +156,7 @@ public class TurnFileServiceImpl implements TurnFileService {
             log.error("Error creating notification for file upload: {}", e.getMessage());
         }
 
-        // BSEC-H-2: build JSON via Jackson so quotes in values are escaped
+        // Build JSON via Jackson so quotes in values are escaped
         // (a raw quote in publicUrl/fileName previously produced malformed JSON).
         ObjectNode json = JsonNodeFactory.instance.objectNode();
         json.put("url", publicUrl);

@@ -139,7 +139,7 @@ class DoctorServiceComprehensiveTest {
     @Test
     void getAllDoctors_ActiveDoctorsExist_ReturnsListOfDoctors() {        List<User> doctors = Arrays.asList(doctorUser1, doctorUser2);
         when(userRepository.findDoctorsByStatus("ACTIVE")).thenReturn(doctors);
-        // BBUG-L4: service delegates to the batch mapper (toDTOList) instead of per-row toDTO.
+        // Service delegates to the batch mapper (toDTOList) instead of per-row toDTO.
         when(doctorMapper.toDTOList(doctors)).thenReturn(Arrays.asList(doctorDTO1, doctorDTO2));
         List<DoctorDTO> result = doctorService.getAllDoctors();        assertNotNull(result);
         assertEquals(2, result.size());
@@ -367,7 +367,7 @@ class DoctorServiceComprehensiveTest {
         List<User> doctors = Arrays.asList(doctorUser1, doctorWithoutProfile);
         when(userRepository.findDoctorsByStatus("ACTIVE")).thenReturn(doctors);
 
-        // BBUG-M1: an ACTIVE doctor without a profile must be skipped, not NPE.
+        // An ACTIVE doctor without a profile must be skipped, not NPE.
         List<String> result = assertDoesNotThrow(() -> doctorService.getAllSpecialties());
 
         assertEquals(List.of("Cardiología"), result);
@@ -379,7 +379,7 @@ class DoctorServiceComprehensiveTest {
         DoctorDTO largeDoctorDTOList = doctorDTO1;
         
         when(userRepository.findDoctorsByStatus("ACTIVE")).thenReturn(largeDoctorList);
-        // BBUG-L4: batch mapping — one toDTOList call regardless of list size.
+        // Batch mapping — one toDTOList call regardless of list size.
         when(doctorMapper.toDTOList(largeDoctorList)).thenReturn(Collections.nCopies(1000, largeDoctorDTOList));        long startTime = System.currentTimeMillis();
         List<DoctorDTO> result = doctorService.getAllDoctors();
         long endTime = System.currentTimeMillis();        assertNotNull(result);

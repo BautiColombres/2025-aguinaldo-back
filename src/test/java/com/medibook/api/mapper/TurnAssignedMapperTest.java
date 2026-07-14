@@ -484,7 +484,7 @@ class TurnAssignedMapperTest {
         assertNull(result.getUploadedAt());
     }
 
-    // ---- BBUG-L4: batch mapping ----
+    // ---- batch mapping ----
 
     @Test
     void toDTOList_batchLoadsRatingsAndFiles_oneQueryEach_noPerRowLookups() {

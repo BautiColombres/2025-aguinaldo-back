@@ -248,14 +248,14 @@ class DoctorServiceTest {
                 .build();
 
         when(turnAssignedRepository.findById(turnId)).thenReturn(Optional.of(turn));
-        when(medicalHistoryService.addMedicalHistory(doctorId, turnId, medicalHistory))
+        when(medicalHistoryService.addMedicalHistory(doctorId, turnId, medicalHistory, null))
                 .thenReturn(expectedResult);
 
-        assertDoesNotThrow(() -> 
+        assertDoesNotThrow(() ->
             doctorService.updatePatientMedicalHistory(doctorId, patientId1, turnId, medicalHistory));
 
         verify(turnAssignedRepository).findById(turnId);
-        verify(medicalHistoryService).addMedicalHistory(doctorId, turnId, medicalHistory);
+        verify(medicalHistoryService).addMedicalHistory(doctorId, turnId, medicalHistory, null);
     }
 
     @Test

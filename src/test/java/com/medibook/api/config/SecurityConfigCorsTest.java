@@ -11,7 +11,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 /**
- * BSEC-M-2 / FSEC-H1: CORS must pin origins, allow credentials (for the refresh
+ * CORS must pin origins, allow credentials (for the refresh
  * cookie), and use explicit method/header allow-lists instead of wildcards.
  */
 @SpringBootTest
@@ -68,14 +68,14 @@ class SecurityConfigCorsTest {
                 "CORS headers must not be a wildcard: " + allowHeaders);
         org.junit.jupiter.api.Assertions.assertTrue(allowHeaders.contains("Authorization"));
         org.junit.jupiter.api.Assertions.assertTrue(allowHeaders.contains("Content-Type"));
-        // FSEC-H1 Stage 3: the Refresh-Token header is removed from the CORS allow-list.
+        // The Refresh-Token header is removed from the CORS allow-list.
         org.junit.jupiter.api.Assertions.assertFalse(allowHeaders.contains("Refresh-Token"),
                 "Refresh-Token must no longer be an allowed CORS header: " + allowHeaders);
     }
 
     @Test
     void preflight_refreshTokenHeader_isNotAllowed() throws Exception {
-        // FSEC-H1 Stage 3: a preflight requesting the removed Refresh-Token header must
+        // A preflight requesting the removed Refresh-Token header must
         // NOT get it echoed back as allowed.
         var result = mockMvc.perform(options("/api/auth/refresh-token")
                 .header("Origin", PINNED_ORIGIN)

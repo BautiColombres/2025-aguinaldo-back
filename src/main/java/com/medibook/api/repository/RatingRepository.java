@@ -45,7 +45,7 @@ public interface RatingRepository extends JpaRepository<Rating, UUID> {
     List<Object[]> countSubcategoriesByRatedIds(@Param("ratedIds") List<UUID> ratedIds, @Param("raterRole") String raterRole);
 
     /**
-     * BBUG-L4: batch lookup of (turnId, raterId) pairs for a set of turns, so a multi-row
+     * Batch lookup of (turnId, raterId) pairs for a set of turns, so a multi-row
      * mapper can resolve "already rated" flags in ONE query instead of one per turn/rater.
      */
     @Query("SELECT r.turnAssigned.id, r.rater.id FROM Rating r WHERE r.turnAssigned.id IN :turnIds")

@@ -395,7 +395,7 @@ class AuthServiceImplTest {
 
         assertNotNull(result);
         assertNotNull(result.response().accessToken());
-        // FSEC-H1 Stage 3: raw refresh token is carried on the result (for the cookie),
+        // Raw refresh token is carried on the result (for the cookie),
         // NOT inside the response body DTO.
         assertNotNull(result.refreshToken());
         assertEquals(sampleUser.getId(), result.response().id());
@@ -528,7 +528,7 @@ class AuthServiceImplTest {
 
     @Test
     void signOut_ForeignToken_NotRevoked() {
-        // BBUG-L2: caller must NOT be able to revoke a token owned by a different user.
+        // Caller must NOT be able to revoke a token owned by a different user.
         User owner = new User();
         owner.setId(UUID.randomUUID());
         UUID attackerId = UUID.randomUUID();
@@ -568,7 +568,7 @@ class AuthServiceImplTest {
 
     @Test
     void refreshTokenHash_isHmac_notBareSha256() {
-        // BSEC-L-2: the stored refresh-token hash must be a keyed HMAC, not a bare SHA-256.
+        // The stored refresh-token hash must be a keyed HMAC, not a bare SHA-256.
         String hmac = hashToken("some-refresh-token");
         assertNotEquals(sha256("some-refresh-token"), hmac,
                 "refresh token must be stored as HMAC, not bare SHA-256");
@@ -1790,7 +1790,7 @@ class AuthServiceImplTest {
         assertTrue(e2.getMessage().contains("Slot duration must be between 5 and 180 minutes"));
     }
 
-    // BSEC-L-2: refresh tokens are now stored as keyed HMAC-SHA256, not bare SHA-256. This
+    // Refresh tokens are now stored as keyed HMAC-SHA256, not bare SHA-256. This
     // helper mirrors the production hmacToken() so the stored-hash assertions stay valid.
     private String hashToken(String token) {
         try {

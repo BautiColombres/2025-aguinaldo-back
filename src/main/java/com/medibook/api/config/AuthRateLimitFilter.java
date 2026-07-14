@@ -23,7 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
 /**
- * BSEC-M-4 — per-client Bucket4j rate-limiting filter for {@code /api/auth/**}.
+ * Per-client Bucket4j rate-limiting filter for {@code /api/auth/**}.
  * Returns HTTP 429 with a JSON body when the limit is exceeded. Does NOT assume a
  * WAF/gateway: limiting happens in-app.
  *

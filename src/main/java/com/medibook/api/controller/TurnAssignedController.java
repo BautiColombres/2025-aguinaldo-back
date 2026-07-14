@@ -43,10 +43,8 @@ public class TurnAssignedController {
             @Valid @RequestBody TurnCreateRequestDTO dto,
             Authentication authentication) {
 
-        // BSEC-M-5: read the principal from the standard SecurityContext (set by
-        // TokenAuthenticationFilter) instead of the request attribute.
         User authenticatedUser = (User) authentication.getPrincipal();
-        
+
         if (!AuthorizationUtil.isPatient(authenticatedUser)) {
             return new ResponseEntity<>(
                 Map.of("error", "Forbidden", "message", "Only patients can create turns"), 
@@ -64,11 +62,10 @@ public class TurnAssignedController {
                 HttpStatus.BAD_REQUEST);
         }
         
-        // BBUG-M4: only surface a message for the KNOWN business case (slot conflict → 409;
-        // that string is safe/intended). Any OTHER RuntimeException (NPE, persistence
-        // failure, unexpected fault) must NOT be echoed to the client nor masked as a 400:
-        // let it propagate so the framework returns a generic 500 (server.error.include-*
-        // are set to never), matching the BSEC-M-3 generic-message rule.
+        // Only surface a message for the known business case (slot conflict -> 409;
+        // that string is safe/intended). Any other RuntimeException must not be echoed
+        // to the client nor masked as a 400: let it propagate so the framework returns
+        // a generic 500.
         try {
             TurnResponseDTO result = turnService.createTurn(dto);
             return new ResponseEntity<>(result, HttpStatus.CREATED);
@@ -100,7 +97,7 @@ public class TurnAssignedController {
         
         List<OffsetDateTime> availableTimes = new ArrayList<>();
 
-        // BBUG-L1: derive the offset from the project ARGENTINA_ZONE instead of a hardcoded
+        // Derive the offset from the project ARGENTINA_ZONE instead of a hardcoded
         // "-03:00" literal, so it stays correct across any DST/offset change for the zone.
         for (AvailableSlotDTO slot : availableSlots) {
             OffsetDateTime slotDateTime = slot.getDate().atTime(slot.getStartTime())
@@ -195,7 +192,6 @@ public class TurnAssignedController {
             @PathVariable UUID turnId,
             Authentication authentication) {
 
-        // BSEC-L-1: null-safe principal — a missing user yields 401 instead of an NPE -> 500.
         User authenticatedUser = AuthorizationUtil.extractAuthenticatedUser(authentication);
         if (authenticatedUser == null) {
             return AuthorizationUtil.createUnauthenticatedResponse();
@@ -221,7 +217,6 @@ public class TurnAssignedController {
             Authentication authentication,
             HttpServletRequest request) {
 
-        // BSEC-M-5: principal from SecurityContext; request kept only for getRequestURI().
         User authenticatedUser = (User) authentication.getPrincipal();
 
         if (!"DOCTOR".equals(authenticatedUser.getRole())) {
@@ -244,7 +239,6 @@ public class TurnAssignedController {
             Authentication authentication,
             HttpServletRequest request) {
 
-        // BSEC-M-5: principal from SecurityContext; request kept only for getRequestURI().
         User authenticatedUser = (User) authentication.getPrincipal();
 
         if (!"DOCTOR".equals(authenticatedUser.getRole())) {

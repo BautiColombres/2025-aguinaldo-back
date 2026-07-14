@@ -22,7 +22,7 @@ import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.mock;
 
 /**
- * BSEC-H-4 — env-driven admin provisioning. The runner must:
+ * Env-driven admin provisioning. The runner must:
  *  - fail fast when ADMIN_EMAIL / ADMIN_PASSWORD are absent,
  *  - create the admin from env vars (BCrypt-encoded, mustResetPassword=true),
  *  - be idempotent: updating (not duplicating) an existing admin on re-run.

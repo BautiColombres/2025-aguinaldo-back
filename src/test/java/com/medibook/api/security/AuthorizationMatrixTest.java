@@ -30,9 +30,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * Consolidated authorization matrix (BLOCKING CI gate) covering
  * anonymous / patient / doctor-related / doctor-unrelated / admin across the
- * PHI- and IDOR-sensitive endpoints touched by P0/P1:
- * medical-history (P0), doctor medical-history (NEW-H-A), badge (BSEC-M-5),
- * admin-register (BSEC-C-1).
+ * PHI- and IDOR-sensitive endpoints:
+ * medical-history, doctor medical-history, badge, admin-register.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -90,7 +89,7 @@ class AuthorizationMatrixTest {
         adminToken = getAuthToken(admin.getEmail());
     }
 
-    // ===== medical-history list (P0) =====
+    // ===== medical-history list =====
 
     @Test
     void medicalHistoryList_matrix() throws Exception {
@@ -103,7 +102,7 @@ class AuthorizationMatrixTest {
         expect(get(path), adminToken, 200);                         // admin
     }
 
-    // ===== doctor patient medical-history (NEW-H-A) =====
+    // ===== doctor patient medical-history =====
 
     @Test
     void doctorPatientMedicalHistory_matrix() throws Exception {
@@ -119,7 +118,7 @@ class AuthorizationMatrixTest {
         expect(get(relatedPath), adminToken, 200);                  // admin
     }
 
-    // ===== badge IDOR (BSEC-M-5) =====
+    // ===== badge IDOR =====
 
     @Test
     void badgeRead_matrix() throws Exception {
@@ -139,7 +138,7 @@ class AuthorizationMatrixTest {
         expect(post(path), adminToken, 200);                        // admin
     }
 
-    // ===== admin register (BSEC-C-1) =====
+    // ===== admin register =====
 
     @Test
     void adminRegister_matrix() throws Exception {

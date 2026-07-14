@@ -7,7 +7,7 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * BSEC-M-4 hardening — resolves the real client IP for rate-limiting purposes
+ * Resolves the real client IP for rate-limiting purposes
  * WITHOUT blindly trusting the {@code X-Forwarded-For} header.
  *
  * <p>{@code X-Forwarded-For} is honored only when the immediate peer

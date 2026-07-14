@@ -38,10 +38,6 @@ public class RatingController {
             Authentication authentication,
             HttpServletRequest request) {
 
-        // BSEC-M-5: read the principal from the standard SecurityContext (set by
-        // TokenAuthenticationFilter) instead of the request attribute. HttpServletRequest
-        // is still needed below only for request.getRequestURI() in the error path.
-        // BSEC-L-1: null-safe — a missing principal yields a 401 instead of an NPE -> 500.
         User authenticatedUser = com.medibook.api.util.AuthorizationUtil.extractAuthenticatedUser(authentication);
         if (authenticatedUser == null) {
             return com.medibook.api.util.AuthorizationUtil.createUnauthenticatedResponse();

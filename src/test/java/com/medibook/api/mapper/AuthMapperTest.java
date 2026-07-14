@@ -30,7 +30,7 @@ class AuthMapperTest {
 
         String accessToken = "access-token-123";
 
-        // FSEC-H1 Stage 3: the DTO no longer carries a refresh token.
+        // The DTO no longer carries a refresh token.
         SignInResponseDTO result = authMapper.toSignInResponse(user, accessToken);
 
         assertThat(result).isNotNull();

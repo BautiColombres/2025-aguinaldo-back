@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface TurnAssignedRepository extends JpaRepository<TurnAssigned, UUID> {
@@ -34,7 +35,26 @@ public interface TurnAssignedRepository extends JpaRepository<TurnAssigned, UUID
 
     @Query("SELECT COUNT(t) > 0 FROM TurnAssigned t WHERE t.doctor.id = :doctorId AND t.patient.id = :patientId AND t.status NOT IN ('CANCELED', 'NO_SHOW')")
     boolean existsActiveRelationship(@Param("doctorId") UUID doctorId, @Param("patientId") UUID patientId);
+
+    /**
+     * True when the patient has a FUTURE (after {@code now}) active — non-cancelled /
+     * non-no-show — turn with this doctor. Used by the follow-up "due" panel to
+     * live-filter out patients who already have an upcoming turn.
+     * Note the deliberate type split: turn {@code scheduledAt} is an
+     * {@code OffsetDateTime}; the reminder's {@code scheduled_for} is a
+     * {@code LocalDate}.
+     */
+    @Query("SELECT COUNT(t) > 0 FROM TurnAssigned t WHERE t.doctor.id = :doctorId AND t.patient.id = :patientId AND t.scheduledAt > :now AND t.status NOT IN ('CANCELED', 'NO_SHOW')")
+    boolean existsFutureActiveTurn(@Param("doctorId") UUID doctorId, @Param("patientId") UUID patientId, @Param("now") OffsetDateTime now);
     
+    /**
+     * The patient's most-recent turn with a given status for this doctor. Used by
+     * the "due" panel to enrich {@code lastTurnDate} (most-recent COMPLETED
+     * turn). Ownership-scoped by doctor + patient.
+     */
+    Optional<TurnAssigned> findFirstByDoctor_IdAndPatient_IdAndStatusOrderByScheduledAtDesc(
+            UUID doctorId, UUID patientId, String status);
+
     List<TurnAssigned> findByPatient_IdAndStatusAndScheduledAtAfter(UUID patientId, String status, OffsetDateTime scheduledAt);
     
     List<TurnAssigned> findByPatient_IdAndStatus(UUID patientId, String status);

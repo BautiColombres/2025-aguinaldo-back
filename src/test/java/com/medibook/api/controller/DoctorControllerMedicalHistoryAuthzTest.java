@@ -27,7 +27,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * NEW-H-A: GET /api/doctors/{doctorId}/patients/{patientId}/medical-history must
+ * GET /api/doctors/{doctorId}/patients/{patientId}/medical-history must
  * enforce explicit PHI authorization (via @medAuthz), not just query data-scoping.
  */
 @SpringBootTest

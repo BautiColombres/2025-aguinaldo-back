@@ -29,7 +29,7 @@ public class DoctorMapper {
     }
 
     /**
-     * BBUG-L4: batch mapping — loads the active badges for ALL given doctors in a SINGLE
+     * Batch mapping — loads the active badges for ALL given doctors in a SINGLE
      * query (instead of one {@code findByUser_IdAndIsActiveTrue} per doctor) and maps each.
      */
     public List<DoctorDTO> toDTOList(List<User> users) {

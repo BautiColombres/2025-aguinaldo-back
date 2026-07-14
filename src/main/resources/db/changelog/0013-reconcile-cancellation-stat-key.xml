@@ -7,7 +7,7 @@
           https://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-4.24.xsd">
 
     <!--
-        BBUG-H1: cancellation stat key mismatch.
+        Cancellation stat key mismatch.
         The canonical key is `total_cancellations` (written by
         BadgeStatisticsUpdateService#updateAfterTurnCancelledSync and read by
         BadgeService). Historical rows (migrated from the legacy

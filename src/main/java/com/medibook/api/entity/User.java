@@ -17,6 +17,10 @@ import lombok.Setter;
 @Getter
 @Setter
 @Table(name = "users")
+// Class-level batching of LAZY User proxies (up to 32 per select).
+// Field-level @BatchSize is not allowed on @ManyToOne, so the batch hint
+// lives on the target entity.
+@org.hibernate.annotations.BatchSize(size = 32)
 public class User {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -77,7 +81,7 @@ public class User {
     public void setDoctorProfile(DoctorProfile doctorProfile) {
         this.doctorProfile = doctorProfile;
         if (doctorProfile != null) {
-            // BBUG-M5: only wire the back-reference. The shared primary key is derived
+            // Only wire the back-reference. The shared primary key is derived
             // from this user's id at persist time via @MapsId; forcing it here would copy
             // a possibly-null id onto the profile.
             doctorProfile.setUser(this);

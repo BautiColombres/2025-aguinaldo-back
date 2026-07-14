@@ -14,7 +14,7 @@ public interface BadgeRepository extends JpaRepository<Badge, UUID> {
 
     List<Badge> findByUser_IdAndIsActiveTrue(UUID userId);
 
-    // BBUG-L4: batch active-badge lookup for a set of users (one query instead of one per user).
+    // Batch active-badge lookup for a set of users (one query instead of one per user).
     List<Badge> findByUser_IdInAndIsActiveTrue(java.util.Collection<UUID> userIds);
 
     List<Badge> findByUser_IdOrderByEarnedAtDesc(UUID userId);

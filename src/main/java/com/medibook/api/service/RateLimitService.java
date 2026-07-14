@@ -10,7 +10,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * BSEC-M-4 — shared, bounded per-client token-bucket rate limiter.
+ * Shared, bounded per-client token-bucket rate limiter.
  *
  * <p>Backed by Bucket4j. Buckets are held in a size-bounded LRU cache so the map
  * cannot grow without limit (replacing the previous unbounded, never-evicted

@@ -19,15 +19,21 @@ public class SecurityConfig {
 
     private final TokenAuthenticationFilter tokenAuthenticationFilter;
     private final JwtAuthenticationEntryEndpoint jwtAuthenticationEntryEndpoint;
+    private final JwtAccessDeniedHandler jwtAccessDeniedHandler;
+    private final ActiveUserAuthorizationManager activeUserAuthorizationManager;
 
     @Value("${CORS_ALLOWED_ORIGINS:http://localhost:5173}")
     private String allowedOrigins;
 
     public SecurityConfig(TokenAuthenticationFilter tokenAuthenticationFilter,
-                            JwtAuthenticationEntryEndpoint jwtAuthenticationEntryEndpoint) {
-        
+                            JwtAuthenticationEntryEndpoint jwtAuthenticationEntryEndpoint,
+                            JwtAccessDeniedHandler jwtAccessDeniedHandler,
+                            ActiveUserAuthorizationManager activeUserAuthorizationManager) {
+
         this.tokenAuthenticationFilter = tokenAuthenticationFilter;
         this.jwtAuthenticationEntryEndpoint = jwtAuthenticationEntryEndpoint;
+        this.jwtAccessDeniedHandler = jwtAccessDeniedHandler;
+        this.activeUserAuthorizationManager = activeUserAuthorizationManager;
     }
 
     @Bean
@@ -59,11 +65,17 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/auth/register/doctor").permitAll()
                 .requestMatchers("/api/gymcloud/**").permitAll()
                 .requestMatchers("/error").permitAll()
-                // Rutas privadas
-                .anyRequest().authenticated()
+                // Rutas privadas: autenticado Y con la cuenta ACTIVE.
+                // Un usuario autenticado pero no-ACTIVE (doctor PENDING, usuario DISABLED)
+                // se deniega ACA, en la capa de autorizacion => 403 (no 401). BUG-001.
+                .anyRequest().access(activeUserAuthorizationManager)
             )
             .exceptionHandling(exception -> exception
+                // Anonimo (sin token / token invalido o vencido) -> 401.
                 .authenticationEntryPoint(jwtAuthenticationEntryEndpoint)
+                // Autenticado pero sin permiso (rol incorrecto, recurso ajeno, cuenta
+                // no-ACTIVE) -> 403 generico, sin filtrar el motivo.
+                .accessDeniedHandler(jwtAccessDeniedHandler)
             )
             .addFilterBefore(tokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         

@@ -64,9 +64,6 @@ public class User {
     @Column(name = "score")
     private Double score;
 
-    @Column(name = "must_reset_password", nullable = false)
-    private boolean mustResetPassword = false;
-
     @OneToMany(mappedBy = "patient", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<MedicalHistory> medicalHistories = new ArrayList<>();
 

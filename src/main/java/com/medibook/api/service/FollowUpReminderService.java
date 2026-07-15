@@ -230,12 +230,18 @@ public class FollowUpReminderService {
 
     private FollowUpReminderDTO mapToDTO(FollowUpReminder reminder) {
         MedicalHistory history = reminder.getMedicalHistory();
+        User doctor = reminder.getDoctor();
         return FollowUpReminderDTO.builder()
                 .id(reminder.getId())
                 .patientId(reminder.getPatient().getId())
                 .patientName(reminder.getPatient().getName())
                 .patientSurname(reminder.getPatient().getSurname())
-                .doctorId(reminder.getDoctor().getId())
+                .doctorId(doctor.getId())
+                // UX-1: derived at read time from the doctor's User/DoctorProfile — no new column.
+                .doctorName(displayName(doctor))
+                .specialty(doctor.getDoctorProfile() != null
+                        ? doctor.getDoctorProfile().getSpecialty()
+                        : null)
                 .historyId(history != null ? history.getId() : null)
                 .turnId(history != null && history.getTurn() != null ? history.getTurn().getId() : null)
                 .monthsUntilControl(reminder.getMonthsUntilControl())
@@ -243,5 +249,13 @@ public class FollowUpReminderService {
                 .dismissed(reminder.isDismissed())
                 .createdAt(reminder.getCreatedAt())
                 .build();
+    }
+
+    /** "Name Surname", tolerating a missing half. Never exposes email/DNI. */
+    private String displayName(User user) {
+        String name = user.getName() != null ? user.getName().trim() : "";
+        String surname = user.getSurname() != null ? user.getSurname().trim() : "";
+        String full = (name + " " + surname).trim();
+        return full.isEmpty() ? null : full;
     }
 }

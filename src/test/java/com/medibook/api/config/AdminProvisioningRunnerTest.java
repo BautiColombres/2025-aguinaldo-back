@@ -24,8 +24,13 @@ import static org.mockito.Mockito.mock;
 /**
  * Env-driven admin provisioning. The runner must:
  *  - fail fast when ADMIN_EMAIL / ADMIN_PASSWORD are absent,
- *  - create the admin from env vars (BCrypt-encoded, mustResetPassword=true),
+ *  - create the admin from env vars (BCrypt-encoded),
  *  - be idempotent: updating (not duplicating) an existing admin on re-run.
+ *
+ * <p>The former {@code mustResetPassword} flag was REMOVED (changelog
+ * {@code 0017-drop-must-reset-password}): it was set here but never enforced at
+ * signin, i.e. a dormant security control that misled readers into believing
+ * first-login reset was covered. See {@link #userEntityHasNoDormantMustResetPasswordFlag()}.
  */
 class AdminProvisioningRunnerTest {
 
@@ -69,7 +74,6 @@ class AdminProvisioningRunnerTest {
         assertEquals("admin@medibook.com", saved.getEmail());
         assertEquals("ADMIN", saved.getRole());
         assertEquals("ACTIVE", saved.getStatus());
-        assertTrue(saved.isMustResetPassword(), "provisioned admin must be flagged mustResetPassword");
         assertTrue(saved.isEmailVerified(), "provisioned admin must be email-verified to be able to log in");
         assertFalse(saved.getPasswordHash().equals("Secret123!"), "password must be encoded");
         assertTrue(passwordEncoder.matches("Secret123!", saved.getPasswordHash()),
@@ -91,7 +95,6 @@ class AdminProvisioningRunnerTest {
         verify(userRepository, times(1)).save(captor.capture());
         User saved = captor.getValue();
         assertTrue(passwordEncoder.matches("NewSecret123!", saved.getPasswordHash()));
-        assertTrue(saved.isMustResetPassword());
         // No new DNI assignment / no duplicate creation: same instance updated.
         verify(userRepository, never()).existsByDni(any());
     }
@@ -116,6 +119,29 @@ class AdminProvisioningRunnerTest {
         assertTrue(saved.isEmailVerified(),
                 "update path must set emailVerified=true so the provisioned admin can authenticate");
         assertEquals("ACTIVE", saved.getStatus());
-        assertTrue(saved.isMustResetPassword());
+    }
+
+    /**
+     * Regression guard for the Phase 6 product decision: the {@code mustResetPassword}
+     * flag was removed rather than wired up.
+     *
+     * <p>It used to be persisted on {@code users.must_reset_password} and set to
+     * {@code true} by this runner, but NOTHING ever read it — signin never forced a
+     * reset. A security control that looks present but does nothing is worse than no
+     * control: it makes the next reader assume first-login reset is handled.
+     *
+     * <p>Do not reintroduce the field on its own. If forced reset is ever built, it
+     * needs the full flow (persisted state + a signin gate + a blocking "set new
+     * password" screen) landing together.
+     */
+    @Test
+    void userEntityHasNoDormantMustResetPasswordFlag() {
+        boolean declaresFlag = java.util.Arrays.stream(User.class.getDeclaredFields())
+                .anyMatch(f -> f.getName().equalsIgnoreCase("mustResetPassword"));
+
+        assertFalse(declaresFlag,
+                "User must not declare a mustResetPassword field: the flag was removed because it "
+                        + "was never enforced at signin. Reintroduce it only together with a real "
+                        + "forced-reset flow (and a Liquibase changelog re-adding the column).");
     }
 }

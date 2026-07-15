@@ -11,6 +11,7 @@ import com.medibook.api.entity.User;
 import com.medibook.api.mapper.AdminMapper;
 import com.medibook.api.mapper.RatingMapper;
 import com.medibook.api.repository.RatingRepository;
+import com.medibook.api.repository.RefreshTokenRepository;
 import com.medibook.api.repository.UserRepository;
 import com.medibook.api.service.EmailService;
 import com.medibook.api.util.AuthorizationUtil;
@@ -20,12 +21,16 @@ import com.medibook.api.util.UserValidationUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import lombok.extern.slf4j.Slf4j;
 
+import java.time.ZonedDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
+
+import static com.medibook.api.util.DateTimeUtils.ARGENTINA_ZONE;
 
 @RestController
 @RequestMapping("/api/admin")
@@ -37,14 +42,17 @@ public class AdminController {
     private final EmailService emailService;
     private final RatingRepository ratingRepository;
     private final RatingMapper ratingMapper;
+    private final RefreshTokenRepository refreshTokenRepository;
 
-    public AdminController(UserRepository userRepository, AdminMapper adminMapper, EmailService emailService, 
-                          RatingRepository ratingRepository, RatingMapper ratingMapper) {
+    public AdminController(UserRepository userRepository, AdminMapper adminMapper, EmailService emailService,
+                          RatingRepository ratingRepository, RatingMapper ratingMapper,
+                          RefreshTokenRepository refreshTokenRepository) {
         this.userRepository = userRepository;
         this.adminMapper = adminMapper;
         this.emailService = emailService;
         this.ratingRepository = ratingRepository;
         this.ratingMapper = ratingMapper;
+        this.refreshTokenRepository = refreshTokenRepository;
     }
 
     @GetMapping("/pending-doctors")
@@ -128,8 +136,9 @@ public class AdminController {
     }
 
     @PostMapping("/reject-doctor/{doctorId}")
+    @Transactional // the status flip and the refresh-token revocation must land together
     public ResponseEntity<?> rejectDoctor(
-            @PathVariable UUID doctorId, 
+            @PathVariable UUID doctorId,
             HttpServletRequest request) {
         
         User authenticatedUser = (User) request.getAttribute("authenticatedUser");
@@ -149,6 +158,14 @@ public class AdminController {
 
             doctor.setStatus("REJECTED");
             userRepository.save(doctor);
+
+            // Rejecting must END the session, not just flip a flag: a doctor who signed in while
+            // PENDING holds a 30-day refresh token. Revoke the whole family so they cannot keep
+            // rotating it into fresh access tokens. Mirrors ProfileService#deactivateUser.
+            int revoked = refreshTokenRepository.revokeAllTokensByUserId(
+                    doctorId, ZonedDateTime.now(ARGENTINA_ZONE));
+            log.info("Doctor {} rejected; revoked {} refresh token(s)",
+                    LogMaskingUtil.maskId(doctorId), revoked);
 
             try {
                 final String doctorEmail = doctor.getEmail();

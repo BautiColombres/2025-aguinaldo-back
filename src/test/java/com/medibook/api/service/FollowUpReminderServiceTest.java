@@ -488,6 +488,69 @@ class FollowUpReminderServiceTest {
                 .findByPatient_IdAndDismissedFalseOrderByScheduledForAsc(any());
     }
 
+    // ---- UX-1: the reminder names the recommending doctor ----
+
+    /**
+     * The patient must be able to see WHO recommended the control. Name + specialty are
+     * derived from the doctor's User/DoctorProfile — no new persisted column.
+     */
+    @Test
+    void getRemindersForPatient_populatesDoctorNameAndSpecialty() {
+        doctor.setDoctorProfile(doctorProfile("Cardiologia"));
+        FollowUpReminder r = reminder(patient, LocalDate.now());
+        when(followUpReminderRepository.findByPatient_IdAndDismissedFalseOrderByScheduledForAsc(patientId))
+                .thenReturn(List.of(r));
+
+        List<FollowUpReminderDTO> result = service.getRemindersForPatient(patientAuth, patientId);
+
+        assertEquals(1, result.size());
+        FollowUpReminderDTO dto = result.get(0);
+        assertEquals(doctorId, dto.getDoctorId());
+        assertEquals(doctor.getName() + " " + doctor.getSurname(), dto.getDoctorName());
+        assertEquals("Cardiologia", dto.getSpecialty());
+    }
+
+    /** A doctor with no DoctorProfile must not blow up the mapping — specialty is simply absent. */
+    @Test
+    void getRemindersForPatient_doctorWithoutProfile_nameStillPresent_specialtyNull() {
+        doctor.setDoctorProfile(null);
+        FollowUpReminder r = reminder(patient, LocalDate.now());
+        when(followUpReminderRepository.findByPatient_IdAndDismissedFalseOrderByScheduledForAsc(patientId))
+                .thenReturn(List.of(r));
+
+        List<FollowUpReminderDTO> result = service.getRemindersForPatient(patientAuth, patientId);
+
+        FollowUpReminderDTO dto = result.get(0);
+        assertEquals(doctor.getName() + " " + doctor.getSurname(), dto.getDoctorName());
+        assertNull(dto.getSpecialty());
+    }
+
+    /** The doctor-facing due list is built by the same mapper, so it carries the fields too. */
+    @Test
+    void getDueReminders_populatesDoctorNameAndSpecialty() {
+        doctor.setDoctorProfile(doctorProfile("Clinica Medica"));
+        FollowUpReminder r = reminder(patient, LocalDate.now());
+        when(followUpReminderRepository
+                .findByDoctor_IdAndDismissedFalseAndScheduledForLessThanEqual(eq(doctorId), any(LocalDate.class)))
+                .thenReturn(List.of(r));
+        when(turnAssignedRepository.existsFutureActiveTurn(eq(doctorId), eq(patientId), any()))
+                .thenReturn(false);
+
+        List<FollowUpReminderDTO> due = service.getDueReminders(doctorAuth, doctorId);
+
+        assertEquals(1, due.size());
+        assertEquals(doctor.getName() + " " + doctor.getSurname(), due.get(0).getDoctorName());
+        assertEquals("Clinica Medica", due.get(0).getSpecialty());
+    }
+
+    private com.medibook.api.entity.DoctorProfile doctorProfile(String specialty) {
+        com.medibook.api.entity.DoctorProfile profile = new com.medibook.api.entity.DoctorProfile();
+        profile.setSpecialty(specialty);
+        profile.setMedicalLicense("MP-1234");
+        profile.setSlotDurationMin(30);
+        return profile;
+    }
+
     private FollowUpReminder reminder(User forPatient, LocalDate scheduledFor) {
         return FollowUpReminder.builder()
                 .id(UUID.randomUUID())

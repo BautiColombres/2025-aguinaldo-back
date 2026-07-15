@@ -8,6 +8,7 @@ import com.medibook.api.dto.Auth.SignInResultDTO;
 import com.medibook.api.entity.EmailVerification;
 import com.medibook.api.entity.RefreshToken;
 import com.medibook.api.entity.User;
+import com.medibook.api.exception.AccountNotEligibleException;
 import com.medibook.api.mapper.AuthMapper;
 import com.medibook.api.mapper.UserMapper;
 import com.medibook.api.repository.EmailVerificationRepository;
@@ -352,10 +353,29 @@ class AuthServiceImpl implements AuthService {
         }
     }
 
+    /**
+     * Rotates a refresh token.
+     *
+     * <p>Defense in depth: rotation is REFUSED for a user who is no longer sign-in-eligible
+     * (REJECTED / DISABLED), and the user's ENTIRE refresh-token family is revoked on refusal.
+     * Without this, an admin rejecting or disabling an account would not stop them: they could
+     * keep rotating a 30-day refresh token forever and always hold a valid access token, leaving
+     * the request-level ACTIVE gate as the only thing denying them. Mirrors
+     * {@code ProfileService#deactivateUser}, which already revokes the family on deactivation.
+     *
+     * <p>A PENDING doctor IS still eligible (see {@link #isUserAuthorizedToSignIn}) — they must be
+     * able to keep a session alive so the frontend can show the "awaiting approval" screen.
+     *
+     * <p>{@code noRollbackFor}: the refusal path REVOKES tokens and then throws. Without this, the
+     * rollback triggered by the exception would silently undo the revocation. It is scoped to the
+     * dedicated {@link AccountNotEligibleException} so the other throw paths below (token not
+     * found, expired/revoked) keep conventional rollback-on-error semantics — a future write added
+     * before them must NOT silently inherit commit-on-error.
+     */
     @Override
-    @Transactional
+    @Transactional(noRollbackFor = AccountNotEligibleException.class)
     public SignInResultDTO refreshToken(String rawRefreshToken) {
-        
+
         String hashedInputToken = hmacToken(rawRefreshToken);
 
         RefreshToken refreshToken = refreshTokenRepository.findByTokenHash(hashedInputToken)
@@ -366,6 +386,18 @@ class AuthServiceImpl implements AuthService {
         }
 
         User user = refreshToken.getUser();
+
+        if (user == null || !isUserAuthorizedToSignIn(user)) {
+            if (user != null) {
+                int revoked = refreshTokenRepository.revokeAllTokensByUserId(
+                        user.getId(), ZonedDateTime.now(ARGENTINA_ZONE));
+                log.warn("Refresh refused for non-eligible user {}; revoked {} refresh token(s)",
+                        LogMaskingUtil.maskId(user.getId()), revoked);
+            }
+            // Generic message: never disclose the account state to the caller.
+            throw new AccountNotEligibleException("Invalid refresh token");
+        }
+
         String newAccessToken = generateAccessToken(user);
 
         String newRawToken = generateSecureToken();

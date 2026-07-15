@@ -83,6 +83,41 @@ class AuthenticatedUserServiceTest {
         assertTrue(result.isEmpty());
     }
 
+    /**
+     * BUG-001: this service answers "who does this token belong to?" — it is AUTHENTICATION,
+     * not authorization. A non-ACTIVE account holding a VALID token is still identified, so the
+     * request becomes authenticated-but-not-authorized and the authorization layer
+     * ({@code ActiveUserAuthorizationManager}) can deny it with 403 instead of 401.
+     */
+    @Test
+    void validateAccessToken_NonActiveUser_StillResolvesUser_StatusIsAuthorizationConcern() {
+        when(jwtService.extractUserId(validToken)).thenReturn(userId.toString());
+        when(userRepository.findById(userId)).thenReturn(Optional.of(inactiveUser));
+
+        Optional<User> result = authenticatedUserService.validateAccessToken(validToken);
+
+        assertTrue(result.isPresent(), "a valid token must resolve its user regardless of account status");
+        assertEquals(inactiveUser, result.get());
+        assertEquals("DISABLED", result.get().getStatus());
+    }
+
+    @Test
+    void validateAccessToken_PendingDoctor_StillResolvesUser() {
+        User pendingDoctor = new User();
+        pendingDoctor.setId(userId);
+        pendingDoctor.setEmail("pending@example.com");
+        pendingDoctor.setRole("DOCTOR");
+        pendingDoctor.setStatus("PENDING");
+
+        when(jwtService.extractUserId(validToken)).thenReturn(userId.toString());
+        when(userRepository.findById(userId)).thenReturn(Optional.of(pendingDoctor));
+
+        Optional<User> result = authenticatedUserService.validateAccessToken(validToken);
+
+        assertTrue(result.isPresent());
+        assertEquals("PENDING", result.get().getStatus());
+    }
+
     @Test
     void getUserFromAuthorizationHeader_ValidHeader_ReturnsUser() {
         String authHeader = "Bearer " + validToken;

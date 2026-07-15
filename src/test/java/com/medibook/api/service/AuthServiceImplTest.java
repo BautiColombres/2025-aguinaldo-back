@@ -8,6 +8,7 @@ import com.medibook.api.dto.Auth.SignInResultDTO;
 import com.medibook.api.dto.email.EmailResponseDto;
 import com.medibook.api.entity.RefreshToken;
 import com.medibook.api.entity.User;
+import com.medibook.api.exception.AccountNotEligibleException;
 import com.medibook.api.mapper.AuthMapper;
 import com.medibook.api.mapper.UserMapper;
 
@@ -647,11 +648,45 @@ class AuthServiceImplTest {
         assertEquals("Invalid refresh token", exception.getMessage());
     }
 
+    /**
+     * Defense in depth. This test used to ASSERT the vulnerability ("la implementación actual no
+     * valida el estado del usuario en refresh token" + assertDoesNotThrow), which let a
+     * rejected/disabled user rotate a 30-day refresh token forever. Rotation is now refused for a
+     * user who is no longer sign-in-eligible, and the whole token family is revoked.
+     */
     @Test
-    void refreshToken_InactiveUser_ThrowsException() {
-        // La implementación actual no valida el estado del usuario en refresh token
-        // Este test debería pasar porque el token es válido, independientemente del estado del usuario
-        sampleUser.setStatus("INACTIVE");
+    void refreshToken_RejectedDoctor_IsRefused_AndRevokesWholeTokenFamily() {
+        sampleUser.setRole("DOCTOR");
+        sampleUser.setStatus("REJECTED");
+        RefreshToken refreshToken = new RefreshToken();
+        refreshToken.setTokenHash("validTokenHash");
+        refreshToken.setUser(sampleUser);
+        refreshToken.setExpiresAt(ZonedDateTime.now().plusDays(1));
+
+        when(refreshTokenRepository.findByTokenHash(hashToken("validToken"))).thenReturn(Optional.of(refreshToken));
+
+        // The DEDICATED type is what scopes noRollbackFor, so assert it precisely (it still
+        // extends IllegalArgumentException, so AuthController keeps mapping it to 401).
+        AccountNotEligibleException ex = assertThrows(AccountNotEligibleException.class,
+                () -> authService.refreshToken("validToken"));
+
+        // Generic message: the caller is never told their account state.
+        assertEquals("Invalid refresh token", ex.getMessage());
+        assertFalse(ex.getMessage().contains("REJECTED"));
+
+        // The whole family is revoked, and NO new token is minted.
+        // NOTE: mocks have no transaction semantics — that this revocation actually COMMITS
+        // (survives the throw) is proven in AdminRejectAndRefreshRevocationTest, which runs
+        // without an ambient test transaction.
+        verify(refreshTokenRepository).revokeAllTokensByUserId(eq(sampleUser.getId()), any(ZonedDateTime.class));
+        verify(refreshTokenRepository, never()).save(any(RefreshToken.class));
+    }
+
+    /** A PENDING doctor is still sign-in-eligible: refresh must keep working for them. */
+    @Test
+    void refreshToken_PendingDoctor_StillRotates() {
+        sampleUser.setRole("DOCTOR");
+        sampleUser.setStatus("PENDING");
         RefreshToken refreshToken = new RefreshToken();
         refreshToken.setTokenHash("validTokenHash");
         refreshToken.setUser(sampleUser);
@@ -665,8 +700,10 @@ class AuthServiceImplTest {
                                 "new_access_token")
         );
 
-        // No debería lanzar excepción porque la implementación actual no valida el estado del usuario
         assertDoesNotThrow(() -> authService.refreshToken("validToken"));
+
+        verify(refreshTokenRepository, never()).revokeAllTokensByUserId(any(), any());
+        verify(refreshTokenRepository).save(any(RefreshToken.class));
     }
 
     @Test

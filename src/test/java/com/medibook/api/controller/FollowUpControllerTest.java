@@ -1,6 +1,7 @@
 package com.medibook.api.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.medibook.api.entity.DoctorProfile;
 import com.medibook.api.entity.FollowUpReminder;
 import com.medibook.api.entity.MedicalHistory;
 import com.medibook.api.entity.TurnAssigned;
@@ -25,6 +26,7 @@ import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -66,6 +68,15 @@ class FollowUpControllerTest {
         ownerDoctor = createUser("fu-owner-doctor@example.com", 50000003L, "DOCTOR");
         otherDoctor = createUser("fu-other-doctor@example.com", 50000004L, "DOCTOR");
         admin = createUser("fu-admin@example.com", 50000005L, "ADMIN");
+
+        // UX-1: the reminder must name the recommending doctor -> the specialty comes
+        // from the doctor's profile (derived, not a persisted reminder column).
+        // The owner doctor gets a DISTINCT name from createUser's default "Test User" so the
+        // doctorName assertion actually discriminates: a mapper wrongly reading
+        // reminder.getPatient() would yield "Test User" and fail.
+        ownerDoctor.setName("Ana");
+        ownerDoctor.setSurname("Gomez");
+        ownerDoctor = withDoctorProfile(ownerDoctor, "Cardiologia", "MP-50003");
 
         // history WITH an active reminder (for list/dismiss)
         TurnAssigned turn1 = turnAssignedRepository.save(TurnAssigned.builder()
@@ -285,6 +296,43 @@ class FollowUpControllerTest {
                 .andExpect(jsonPath("$[0].patientId").value(patient.getId().toString()));
     }
 
+    // ---- UX-1: the patient's reminder names the recommending doctor ----
+
+    @Test
+    void patientReminders_namesTheRecommendingDoctorAndSpecialty() throws Exception {
+        mockMvc.perform(get("/api/patients/" + patient.getId() + "/followups")
+                        .header("Authorization", "Bearer " + patientToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].doctorId").value(ownerDoctor.getId().toString()))
+                .andExpect(jsonPath("$[0].doctorName").value("Ana Gomez"))
+                .andExpect(jsonPath("$[0].specialty").value("Cardiologia"))
+                // the patient is "Test User" -> doctorName must NOT be the patient's name
+                .andExpect(jsonPath("$[0].patientName").value("Test"));
+    }
+
+    /**
+     * The enriched DTO must STILL carry no PHI: no clinical tag/motive, no history content,
+     * and no other patient's data.
+     */
+    @Test
+    void patientReminders_enrichedDto_stillExcludesPhi() throws Exception {
+        mockMvc.perform(get("/api/patients/" + patient.getId() + "/followups")
+                        .header("Authorization", "Bearer " + patientToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].doctorName").exists())
+                .andExpect(jsonPath("$[0].content").doesNotExist())
+                .andExpect(jsonPath("$[0].tags").doesNotExist())
+                .andExpect(jsonPath("$[0].motive").doesNotExist())
+                .andExpect(jsonPath("$[0].notes").doesNotExist())
+                .andExpect(jsonPath("$[0].diagnosis").doesNotExist())
+                .andExpect(jsonPath("$[0].monthsOverdue").doesNotExist())
+                // no leakage of the doctor's private contact details either
+                .andExpect(jsonPath("$[0].doctorEmail").doesNotExist())
+                .andExpect(jsonPath("$[0].doctorDni").doesNotExist())
+                .andExpect(content().string(not(containsString("note1"))))
+                .andExpect(content().string(not(containsString(otherPatient.getId().toString()))));
+    }
+
     @Test
     void patientReminders_otherPatientId_returns403() throws Exception {
         mockMvc.perform(get("/api/patients/" + patient.getId() + "/followups")
@@ -328,6 +376,15 @@ class FollowUpControllerTest {
         user.setStatus("ACTIVE");
         user.setEmailVerified(true);
         return userRepository.save(user);
+    }
+
+    private User withDoctorProfile(User doctor, String specialty, String medicalLicense) {
+        DoctorProfile profile = new DoctorProfile();
+        profile.setSpecialty(specialty);
+        profile.setMedicalLicense(medicalLicense);
+        profile.setSlotDurationMin(30);
+        doctor.setDoctorProfile(profile);
+        return userRepository.saveAndFlush(doctor);
     }
 
     private String getAuthToken(String email) throws Exception {

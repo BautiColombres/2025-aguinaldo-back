@@ -14,11 +14,20 @@ import org.springframework.transaction.annotation.Transactional;
  * Env-driven admin provisioning.
  *
  * <p>On startup this creates-or-updates the admin from {@code ADMIN_EMAIL} /
- * {@code ADMIN_PASSWORD} (BCrypt-encoded), idempotently, and flags the account
- * {@code mustResetPassword=true}.
+ * {@code ADMIN_PASSWORD} (BCrypt-encoded), idempotently.
  *
  * <p><b>Fail-fast:</b> the application refuses to boot if the required admin
  * bootstrap credentials are absent.
+ *
+ * <p><b>No forced password reset.</b> This runner used to flag the provisioned
+ * admin {@code mustResetPassword=true}, but nothing ever enforced it: signin
+ * never checked the flag, so the admin was never forced to reset. A control that
+ * appears to exist but does nothing is worse than none — it leads the next reader
+ * to assume first-login reset is covered. The flag and its column were removed
+ * (changelog {@code 0017-drop-must-reset-password}). If forced reset is wanted, it
+ * must be built as a whole: persisted state + a signin gate + a blocking
+ * "set new password" screen. Until then, the admin password is whatever
+ * {@code ADMIN_PASSWORD} holds — rotate it via the environment.
  */
 @Component
 @Slf4j
@@ -70,7 +79,6 @@ public class AdminProvisioningRunner implements ApplicationRunner {
         // Must be set on BOTH paths: an existing admin row seeded with
         // emailVerified=false would otherwise be locked out by signIn (401).
         admin.setEmailVerified(true);
-        admin.setMustResetPassword(true);
 
         userRepository.save(admin);
         log.info("Admin account provisioned from environment ({} existing admin).",

@@ -138,6 +138,36 @@ class FollowUpReminderRepositoryTest {
         });
     }
 
+    @Test
+    void findByDoctorAndPatient_onlyNonDismissed_scopedToDoctorAndPatient_orderedByScheduledForAsc() {
+        persistReminder(doctorA, patient, LocalDate.now().plusMonths(2), false);
+        persistReminder(doctorA, patient, LocalDate.now().plusMonths(1), false);
+        persistReminder(doctorA, patient, LocalDate.now(), true);          // dismissed -> excluded
+        persistReminder(doctorB, patient, LocalDate.now(), false);         // other doctor -> excluded
+        persistReminder(doctorA, otherPatient, LocalDate.now(), false);    // other patient -> excluded
+
+        List<FollowUpReminder> result = followUpReminderRepository
+                .findByDoctor_IdAndPatient_IdAndDismissedFalseOrderByScheduledForAsc(
+                        doctorA.getId(), patient.getId());
+
+        assertEquals(2, result.size());
+        assertTrue(result.get(0).getScheduledFor().isBefore(result.get(1).getScheduledFor()));
+        result.forEach(r -> {
+            assertEquals(doctorA.getId(), r.getDoctor().getId());
+            assertEquals(patient.getId(), r.getPatient().getId());
+            assertFalse(r.isDismissed());
+        });
+    }
+
+    @Test
+    void findByDoctorAndPatient_noReminders_returnsEmpty() {
+        List<FollowUpReminder> result = followUpReminderRepository
+                .findByDoctor_IdAndPatient_IdAndDismissedFalseOrderByScheduledForAsc(
+                        doctorA.getId(), patient.getId());
+
+        assertTrue(result.isEmpty());
+    }
+
     private FollowUpReminder persistReminder(User doctor, User patientUser, LocalDate scheduledFor, boolean dismissed) {
         TurnAssigned turn = entityManager.persistAndFlush(TurnAssigned.builder()
                 .doctor(doctor)

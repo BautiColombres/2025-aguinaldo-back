@@ -134,9 +134,13 @@ public class FollowUpReminderService {
     }
 
     /**
-     * The doctor's live "due + no future turn" set: non-dismissed reminders due
-     * today or earlier (past-due still shows — no expiry), minus patients
-     * who already have a future active turn with this doctor.
+     * The doctor's live "due + not-yet-returned" set: non-dismissed reminders due
+     * today or earlier (past-due still shows — no expiry), minus patients who
+     * already have a FUTURE active turn with this doctor, AND minus reminders the
+     * patient has already FULFILLED — i.e. they came back with a COMPLETED turn on
+     * or after the reminder's recommended control date ({@code scheduled_for}).
+     * Without the second filter the panel nonsensically lists patients whose last
+     * visit is later than the recommended date (they already returned).
      */
     public List<FollowUpReminderDTO> getDueReminders(Authentication authentication, UUID doctorId) {
         requireDoctorPrincipal(authentication, doctorId, AuditAction.READ);
@@ -150,6 +154,9 @@ public class FollowUpReminderService {
                 .stream()
                 .filter(r -> !turnAssignedRepository.existsFutureActiveTurn(
                         doctorId, r.getPatient().getId(), now))
+                .filter(r -> !turnAssignedRepository.existsCompletedTurnOnOrAfter(
+                        doctorId, r.getPatient().getId(),
+                        r.getScheduledFor().atStartOfDay(ARGENTINA_ZONE).toOffsetDateTime()))
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());
     }
@@ -207,6 +214,26 @@ public class FollowUpReminderService {
 
         return followUpReminderRepository
                 .findByPatient_IdAndDismissedFalseOrderByScheduledForAsc(patientId)
+                .stream()
+                .map(this::mapToDTO)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Doctor-scoped read of ONE patient's active reminders. Service-side authz:
+     * the principal must be the doctor named in the path ({@code doctorId}); a
+     * doctor requesting another doctor's id is denied (and id-only audited). Returns
+     * the doctor's own non-dismissed reminders for that patient — soonest control
+     * date first — so the doctor's PatientDetails view can hide the "Crear
+     * recordatorio" control on history entries that already have one. Empty when none.
+     */
+    public List<FollowUpReminderDTO> getRemindersForPatientAsDoctor(Authentication authentication,
+                                                                    UUID doctorId, UUID patientId) {
+        requireDoctorPrincipal(authentication, doctorId, AuditAction.READ);
+        auditLogService.record(AuditAction.READ, AuditOutcome.ALLOW, patientId, RESOURCE_TYPE, null);
+
+        return followUpReminderRepository
+                .findByDoctor_IdAndPatient_IdAndDismissedFalseOrderByScheduledForAsc(doctorId, patientId)
                 .stream()
                 .map(this::mapToDTO)
                 .collect(Collectors.toList());

@@ -58,6 +58,17 @@ public class FollowUpController {
                 followUpReminderService.getPatientsDueForFollowUp(authentication, doctorId));
     }
 
+    @GetMapping("/api/doctors/{doctorId}/patients/{patientId}/followups")
+    @PreAuthorize("hasRole('DOCTOR')")
+    public ResponseEntity<List<FollowUpReminderDTO>> getDoctorPatientReminders(
+            @PathVariable UUID doctorId,
+            @PathVariable UUID patientId,
+            Authentication authentication) {
+
+        return ResponseEntity.ok(
+                followUpReminderService.getRemindersForPatientAsDoctor(authentication, doctorId, patientId));
+    }
+
     @PutMapping("/api/doctors/{doctorId}/followups/{reminderId}/dismiss")
     @PreAuthorize("hasRole('DOCTOR')")
     public ResponseEntity<Void> dismissReminder(

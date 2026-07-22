@@ -216,6 +216,21 @@ class FollowUpControllerTest {
     }
 
     @Test
+    void dueForFollowup_excludesPatientWhoAlreadyReturnedOnOrAfterScheduledFor() throws Exception {
+        // BUG FIX end-to-end: the patient already came back with a COMPLETED turn on/after
+        // the reminder's scheduledFor (LocalDate.now()). The reminder is fulfilled and the
+        // patient must DROP off the panel. Red before the completed-turn filter, green after.
+        turnAssignedRepository.save(TurnAssigned.builder()
+                .doctor(ownerDoctor).patient(patient)
+                .scheduledAt(OffsetDateTime.now()).status("COMPLETED").build());
+
+        mockMvc.perform(get("/api/doctors/" + ownerDoctor.getId() + "/patients/due-for-followup")
+                        .header("Authorization", "Bearer " + ownerDoctorToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
+    }
+
+    @Test
     void dueForFollowup_foreignDoctorId_returns403() throws Exception {
         mockMvc.perform(get("/api/doctors/" + otherDoctor.getId() + "/patients/due-for-followup")
                         .header("Authorization", "Bearer " + ownerDoctorToken))
@@ -232,6 +247,51 @@ class FollowUpControllerTest {
     @Test
     void dueForFollowup_anonymous_returns401() throws Exception {
         mockMvc.perform(get("/api/doctors/" + ownerDoctor.getId() + "/patients/due-for-followup"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    // ---- GET doctor-scoped reminders for one patient ----
+
+    @Test
+    void doctorPatientReminders_ownerDoctor_returnsOwnActiveReminders() throws Exception {
+        mockMvc.perform(get("/api/doctors/" + ownerDoctor.getId()
+                        + "/patients/" + patient.getId() + "/followups")
+                        .header("Authorization", "Bearer " + ownerDoctorToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].patientId").value(patient.getId().toString()))
+                .andExpect(jsonPath("$[0].doctorId").value(ownerDoctor.getId().toString()))
+                .andExpect(jsonPath("$[0].historyId").value(historyWithReminderId.toString()));
+    }
+
+    @Test
+    void doctorPatientReminders_foreignDoctorId_returns403() throws Exception {
+        mockMvc.perform(get("/api/doctors/" + otherDoctor.getId()
+                        + "/patients/" + patient.getId() + "/followups")
+                        .header("Authorization", "Bearer " + ownerDoctorToken))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void doctorPatientReminders_noRemindersForPatient_returnsEmptyList() throws Exception {
+        mockMvc.perform(get("/api/doctors/" + ownerDoctor.getId()
+                        + "/patients/" + otherPatient.getId() + "/followups")
+                        .header("Authorization", "Bearer " + ownerDoctorToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
+    }
+
+    @Test
+    void doctorPatientReminders_patientRole_returns403() throws Exception {
+        mockMvc.perform(get("/api/doctors/" + ownerDoctor.getId()
+                        + "/patients/" + patient.getId() + "/followups")
+                        .header("Authorization", "Bearer " + patientToken))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void doctorPatientReminders_anonymous_returns401() throws Exception {
+        mockMvc.perform(get("/api/doctors/" + ownerDoctor.getId()
+                        + "/patients/" + patient.getId() + "/followups"))
                 .andExpect(status().isUnauthorized());
     }
 

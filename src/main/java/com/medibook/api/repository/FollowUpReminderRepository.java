@@ -35,4 +35,13 @@ public interface FollowUpReminderRepository extends JpaRepository<FollowUpRemind
      * reminders, soonest control date first.
      */
     List<FollowUpReminder> findByPatient_IdAndDismissedFalseOrderByScheduledForAsc(UUID patientId);
+
+    /**
+     * Doctor-scoped read of one patient's active reminders: the doctor's own
+     * non-dismissed reminders for a given patient, soonest control date first.
+     * Used by the doctor's PatientDetails view to know which medical-history
+     * entries already have an active reminder.
+     */
+    List<FollowUpReminder> findByDoctor_IdAndPatient_IdAndDismissedFalseOrderByScheduledForAsc(
+            UUID doctorId, UUID patientId);
 }

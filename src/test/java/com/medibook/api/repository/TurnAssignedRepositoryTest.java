@@ -14,6 +14,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
+import static com.medibook.api.util.DateTimeUtils.ARGENTINA_ZONE;
 import static org.junit.jupiter.api.Assertions.*;
 
 @DataJpaTest
@@ -429,6 +430,73 @@ class TurnAssignedRepositoryTest {
         boolean exists = turnAssignedRepository
                 .existsFutureActiveTurn(doctorUser.getId(), lonePatient.getId(), now);
         assertFalse(exists);
+    }
+
+    @Test
+    void existsCompletedTurnOnOrAfter_completedTurnOnScheduledForDate_returnsTrue_boundaryEquality() {
+        // Boundary: a COMPLETED turn ON the exact scheduledFor date counts as fulfilled.
+        LocalDate scheduledFor = LocalDate.of(2026, 7, 5);
+        OffsetDateTime from = scheduledFor.atStartOfDay(ARGENTINA_ZONE).toOffsetDateTime();
+        entityManager.persistAndFlush(createTurnAssigned(doctorUser, patientUser,
+                scheduledFor.atTime(10, 0).atZone(ARGENTINA_ZONE).toOffsetDateTime(), "COMPLETED"));
+        entityManager.clear();
+
+        assertTrue(turnAssignedRepository
+                .existsCompletedTurnOnOrAfter(doctorUser.getId(), patientUser.getId(), from));
+    }
+
+    @Test
+    void existsCompletedTurnOnOrAfter_completedTurnAfterScheduledFor_returnsTrue() {
+        // Ana: reminder scheduledFor 2026-07-05, patient returned (COMPLETED) 2026-07-17 -> fulfilled.
+        LocalDate scheduledFor = LocalDate.of(2026, 7, 5);
+        OffsetDateTime from = scheduledFor.atStartOfDay(ARGENTINA_ZONE).toOffsetDateTime();
+        entityManager.persistAndFlush(createTurnAssigned(doctorUser, patientUser,
+                LocalDate.of(2026, 7, 17).atTime(9, 0).atZone(ARGENTINA_ZONE).toOffsetDateTime(), "COMPLETED"));
+        entityManager.clear();
+
+        assertTrue(turnAssignedRepository
+                .existsCompletedTurnOnOrAfter(doctorUser.getId(), patientUser.getId(), from));
+    }
+
+    @Test
+    void existsCompletedTurnOnOrAfter_allCompletedTurnsBeforeScheduledFor_returnsFalse() {
+        // Bruno: reminder scheduledFor 2026-06-20, latest COMPLETED turns 06-15 & 06-18 (both before) -> NOT fulfilled.
+        LocalDate scheduledFor = LocalDate.of(2026, 6, 20);
+        OffsetDateTime from = scheduledFor.atStartOfDay(ARGENTINA_ZONE).toOffsetDateTime();
+        entityManager.persistAndFlush(createTurnAssigned(doctorUser, patientUser,
+                LocalDate.of(2026, 6, 15).atTime(9, 0).atZone(ARGENTINA_ZONE).toOffsetDateTime(), "COMPLETED"));
+        entityManager.persistAndFlush(createTurnAssigned(doctorUser, patientUser,
+                LocalDate.of(2026, 6, 18).atTime(9, 0).atZone(ARGENTINA_ZONE).toOffsetDateTime(), "COMPLETED"));
+        entityManager.clear();
+
+        assertFalse(turnAssignedRepository
+                .existsCompletedTurnOnOrAfter(doctorUser.getId(), patientUser.getId(), from));
+    }
+
+    @Test
+    void existsCompletedTurnOnOrAfter_nonCompletedTurnAfter_returnsFalse() {
+        // A future SCHEDULED turn does NOT fulfill the reminder — only COMPLETED counts.
+        LocalDate scheduledFor = LocalDate.of(2026, 7, 5);
+        OffsetDateTime from = scheduledFor.atStartOfDay(ARGENTINA_ZONE).toOffsetDateTime();
+        entityManager.persistAndFlush(createTurnAssigned(doctorUser, patientUser,
+                LocalDate.of(2026, 7, 20).atTime(9, 0).atZone(ARGENTINA_ZONE).toOffsetDateTime(), "SCHEDULED"));
+        entityManager.clear();
+
+        assertFalse(turnAssignedRepository
+                .existsCompletedTurnOnOrAfter(doctorUser.getId(), patientUser.getId(), from));
+    }
+
+    @Test
+    void existsCompletedTurnOnOrAfter_scopedToDoctorAndPatient() {
+        // Another patient's completed turn must not leak into this patient's fulfillment.
+        LocalDate scheduledFor = LocalDate.of(2026, 7, 5);
+        OffsetDateTime from = scheduledFor.atStartOfDay(ARGENTINA_ZONE).toOffsetDateTime();
+        entityManager.persistAndFlush(createTurnAssigned(doctorUser, otherPatientUser,
+                LocalDate.of(2026, 7, 20).atTime(9, 0).atZone(ARGENTINA_ZONE).toOffsetDateTime(), "COMPLETED"));
+        entityManager.clear();
+
+        assertFalse(turnAssignedRepository
+                .existsCompletedTurnOnOrAfter(doctorUser.getId(), patientUser.getId(), from));
     }
 
     @Test

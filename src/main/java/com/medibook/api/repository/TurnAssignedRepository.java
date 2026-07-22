@@ -46,6 +46,18 @@ public interface TurnAssignedRepository extends JpaRepository<TurnAssigned, UUID
      */
     @Query("SELECT COUNT(t) > 0 FROM TurnAssigned t WHERE t.doctor.id = :doctorId AND t.patient.id = :patientId AND t.scheduledAt > :now AND t.status NOT IN ('CANCELED', 'NO_SHOW')")
     boolean existsFutureActiveTurn(@Param("doctorId") UUID doctorId, @Param("patientId") UUID patientId, @Param("now") OffsetDateTime now);
+
+    /**
+     * True when the patient already RETURNED for this doctor: there exists a
+     * COMPLETED turn whose {@code scheduledAt} is on/after {@code from}. Used by the
+     * follow-up "due" panel to drop a reminder the patient has already satisfied —
+     * they came back on/after the recommended control date. The caller passes
+     * {@code from} = start-of-day of the reminder's {@code scheduled_for} (Argentina
+     * zone), so the comparison is effectively "COMPLETED turn DATE &gt;= scheduledFor
+     * DATE" (boundary-inclusive: a completed turn ON the scheduledFor date counts).
+     */
+    @Query("SELECT COUNT(t) > 0 FROM TurnAssigned t WHERE t.doctor.id = :doctorId AND t.patient.id = :patientId AND t.status = 'COMPLETED' AND t.scheduledAt >= :from")
+    boolean existsCompletedTurnOnOrAfter(@Param("doctorId") UUID doctorId, @Param("patientId") UUID patientId, @Param("from") OffsetDateTime from);
     
     /**
      * The patient's most-recent turn with a given status for this doctor. Used by

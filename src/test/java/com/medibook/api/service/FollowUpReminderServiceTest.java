@@ -315,6 +315,70 @@ class FollowUpReminderServiceTest {
     }
 
     @Test
+    void getPatientsDueForFollowUp_excludesPatientWhoAlreadyReturnedOnOrAfterScheduledFor() {
+        // BUG FIX: the patient already came back for a later COMPLETED visit that
+        // satisfies the reminder (completed turn on/after scheduledFor). The reminder
+        // is FULFILLED and must NOT appear in the panel. Red before the second filter
+        // (patient would wrongly appear), green after.
+        FollowUpReminder r = reminder(patient, LocalDate.now().minusMonths(1));
+
+        when(followUpReminderRepository
+                .findByDoctor_IdAndDismissedFalseAndScheduledForLessThanEqual(eq(doctorId), any(LocalDate.class)))
+                .thenReturn(List.of(r));
+        when(turnAssignedRepository.existsFutureActiveTurn(eq(doctorId), eq(patientId), any()))
+                .thenReturn(false);
+        when(turnAssignedRepository.existsCompletedTurnOnOrAfter(eq(doctorId), eq(patientId), any()))
+                .thenReturn(true);
+
+        List<DueForFollowUpDTO> due = service.getPatientsDueForFollowUp(doctorAuth, doctorId);
+
+        assertTrue(due.isEmpty());
+    }
+
+    @Test
+    void getPatientsDueForFollowUp_keepsPatientWhoseCompletedTurnsAllBeforeScheduledFor() {
+        // The patient's completed turns are ALL before the recommended control date:
+        // the reminder is NOT fulfilled and the patient stays in the panel.
+        FollowUpReminder r = reminder(patient, LocalDate.now());
+
+        when(followUpReminderRepository
+                .findByDoctor_IdAndDismissedFalseAndScheduledForLessThanEqual(eq(doctorId), any(LocalDate.class)))
+                .thenReturn(List.of(r));
+        when(turnAssignedRepository.existsFutureActiveTurn(eq(doctorId), eq(patientId), any()))
+                .thenReturn(false);
+        when(turnAssignedRepository.existsCompletedTurnOnOrAfter(eq(doctorId), eq(patientId), any()))
+                .thenReturn(false);
+        when(turnAssignedRepository
+                .findFirstByDoctor_IdAndPatient_IdAndStatusOrderByScheduledAtDesc(doctorId, patientId, "COMPLETED"))
+                .thenReturn(Optional.of(turn));
+
+        List<DueForFollowUpDTO> due = service.getPatientsDueForFollowUp(doctorAuth, doctorId);
+
+        assertEquals(1, due.size());
+        assertEquals(patientId, due.get(0).getPatientId());
+    }
+
+    @Test
+    void getDueReminders_excludesPatientWithCompletedTurnOnOrAfterScheduledFor() {
+        // Same fulfilled-reminder filter, verified at the getDueReminders level: the
+        // start-of-day instant derived from scheduledFor is passed to the repository,
+        // and a true result drops the reminder.
+        FollowUpReminder r = reminder(patient, LocalDate.now().minusMonths(2));
+
+        when(followUpReminderRepository
+                .findByDoctor_IdAndDismissedFalseAndScheduledForLessThanEqual(eq(doctorId), any(LocalDate.class)))
+                .thenReturn(List.of(r));
+        when(turnAssignedRepository.existsFutureActiveTurn(eq(doctorId), eq(patientId), any()))
+                .thenReturn(false);
+        when(turnAssignedRepository.existsCompletedTurnOnOrAfter(eq(doctorId), eq(patientId), any()))
+                .thenReturn(true);
+
+        List<FollowUpReminderDTO> due = service.getDueReminders(doctorAuth, doctorId);
+
+        assertTrue(due.isEmpty());
+    }
+
+    @Test
     void getPatientsDueForFollowUp_foreignDoctorPrincipal_deniedAndAudited() {
         UUID pathDoctorId = UUID.randomUUID();
 
@@ -486,6 +550,49 @@ class FollowUpReminderServiceTest {
                 eq(otherPatientId), eq("FOLLOW_UP_REMINDER"), isNull());
         verify(followUpReminderRepository, never())
                 .findByPatient_IdAndDismissedFalseOrderByScheduledForAsc(any());
+    }
+
+    // ---- getRemindersForPatientAsDoctor (doctor-scoped read of one patient) ----
+
+    @Test
+    void getRemindersForPatientAsDoctor_ownDoctor_returnsNonDismissedForPatient_auditAllow() {
+        FollowUpReminder r = reminder(patient, LocalDate.now());
+        when(followUpReminderRepository
+                .findByDoctor_IdAndPatient_IdAndDismissedFalseOrderByScheduledForAsc(doctorId, patientId))
+                .thenReturn(List.of(r));
+
+        List<FollowUpReminderDTO> result = service.getRemindersForPatientAsDoctor(doctorAuth, doctorId, patientId);
+
+        assertEquals(1, result.size());
+        assertEquals(patientId, result.get(0).getPatientId());
+        assertEquals(doctorId, result.get(0).getDoctorId());
+        verify(auditLogService).record(eq(AuditAction.READ), eq(AuditOutcome.ALLOW),
+                eq(patientId), eq("FOLLOW_UP_REMINDER"), isNull());
+    }
+
+    @Test
+    void getRemindersForPatientAsDoctor_noReminders_returnsEmpty() {
+        when(followUpReminderRepository
+                .findByDoctor_IdAndPatient_IdAndDismissedFalseOrderByScheduledForAsc(doctorId, patientId))
+                .thenReturn(List.of());
+
+        List<FollowUpReminderDTO> result = service.getRemindersForPatientAsDoctor(doctorAuth, doctorId, patientId);
+
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void getRemindersForPatientAsDoctor_foreignDoctorPrincipal_deniedAndAudited() {
+        UUID pathDoctorId = UUID.randomUUID();
+
+        assertThrows(AccessDeniedException.class,
+                () -> service.getRemindersForPatientAsDoctor(doctorAuth, pathDoctorId, patientId));
+
+        verify(auditLogService).record(eq(AuditAction.READ), eq(AuditOutcome.DENY),
+                isNull(), eq("FOLLOW_UP_REMINDER"), any());
+        verify(auditLogService, never()).record(any(), eq(AuditOutcome.ALLOW), any(), any(), any());
+        verify(followUpReminderRepository, never())
+                .findByDoctor_IdAndPatient_IdAndDismissedFalseOrderByScheduledForAsc(any(), any());
     }
 
     // ---- UX-1: the reminder names the recommending doctor ----
